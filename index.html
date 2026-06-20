@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon.svg" />
+  <link rel="icon" href="icons/icon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Sub Rotation</title>
+</head>
+<body>
+  <header id="appbar">
+    <button id="teamChip" class="team-chip" type="button">
+      <span id="teamName">No team</span>
+      <span id="teamDivision" class="badge"></span>
+    </button>
+  </header>
+
+  <main id="screen"><!-- screens render here --></main>
+
+  <nav id="tabbar">
+    <button data-tab="games" class="tab" type="button">🏀<span>Games</span></button>
+    <button data-tab="roster" class="tab" type="button">👥<span>Roster</span></button>
+    <button data-tab="season" class="tab" type="button">📊<span>Season</span></button>
+    <button data-tab="backup" class="tab" type="button">💾<span>Backup</span></button>
+  </nav>
+
+  <div id="sheet-root"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

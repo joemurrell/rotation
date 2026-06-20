@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rotation generator tests</title>
+  <style>
+    body { font: 14px/1.5 monospace; background: #0f172a; color: #e2e8f0; padding: 16px; }
+    .pass { color: #4ade80; } .fail { color: #f87171; } .info { color: #94a3b8; }
+    h2 { color: #f97316; }
+    pre { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h2>Rotation generator tests</h2>
+  <pre id="out"></pre>
+  <script type="module">
+    import { DIVISIONS } from '../js/rules.js';
+    import { generateRotation, availabilityFromWindow } from '../js/rotation.js';
+
+    const out = document.getElementById('out');
+    let passed = 0, failed = 0;
+    const log = (cls, msg) => out.insertAdjacentHTML('beforeend', `<span class="${cls}">${msg}</span>\n`);
+    function assert(cond, msg) {
+      if (cond) { passed++; log('pass', '  ✓ ' + msg); }
+      else { failed++; log('fail', '  ✗ ' + msg); }
+    }
+
+    function makePlayers(n, { periods, windows = {}, front = [] }) {
+      return Array.from({ length: n }, (_, i) => ({
+        id: 'p' + i, name: 'P' + i,
+        available: windows[i] ? availabilityFromWindow(periods, windows[i][0], windows[i][1]) : availabilityFromWindow(periods),
+        frontLoad: front.includes(i),
+      }));
+    }
+    function run(divId, n, extra = {}) {
+      const div = DIVISIONS[divId];
+      const players = makePlayers(n, { periods: div.periods, ...extra });
+      const res = generateRotation({ ...div, players, seed: extra.seed || 7 });
+      const counts = res.counts, grid = res.grid;
+      const vals = players.map((p) => counts[p.id] || 0);
+      let worst = 0;
+      for (const p of players) { let r = 0; for (let i = 0; i < div.periods; i++) { if (grid[i].includes(p.id)) { r++; worst = Math.max(worst, r); } else r = 0; } }
+      const neverSit = players.filter((p) => (counts[p.id] || 0) >= div.periods).length;
+      return { div, grid, counts, vals, worst, neverSit, warnings: res.warnings, players };
+    }
+
+    log('info', '=== Pee Wee (4 periods, court 5) ===');
+    for (const n of [10, 9, 8, 7, 6, 5]) {
+      const { div, grid, vals, worst, warnings } = run('peewee', n);
+      assert(grid.every((g) => g.length === Math.min(div.court, n)), `N=${n}: every period has ${Math.min(div.court, n)} on court`);
+      const spread = Math.max(...vals) - Math.min(...vals);
+      assert(spread <= 1, `N=${n}: playing time balanced (spread ${spread})`);
+      if (n >= 8) assert(worst <= 2, `N=${n}: no one plays >2 in a row (worst ${worst})`);
+      if (n <= 7 && worst > 2) assert(warnings.length > 0, `N=${n}: unavoidable >2-streak is reported`);
+    }
+    {
+      const { vals, worst } = run('peewee', 10);
+      assert(vals.every((v) => v === 2), 'N=10: everyone plays exactly 2');
+      assert(worst <= 1, 'N=10: platoons never play consecutive periods');
+    }
+
+    log('info', '\n=== Mighty Might (8 periods, court 5) ===');
+    for (const n of [10, 9, 8, 7, 6, 5]) {
+      const { div, grid, vals, neverSit } = run('mightymight', n);
+      assert(grid.every((g) => g.length === Math.min(div.court, n)), `N=${n}: every period has ${Math.min(div.court, n)} on court`);
+      const spread = Math.max(...vals) - Math.min(...vals);
+      assert(spread <= 1, `N=${n}: playing time balanced (spread ${spread})`);
+      if (n >= 7) assert(neverSit === 0, `N=${n}: everyone sits at least one period`);
+    }
+
+    log('info', '\n=== Availability window (injury / early leave) ===');
+    {
+      const { grid, players } = run('mightymight', 9, { windows: { 3: [1, 4] } });
+      const p3Periods = grid.map((g, i) => g.includes('p3') ? i + 1 : null).filter(Boolean);
+      assert(p3Periods.every((p) => p <= 4), `injured player only plays within window (got ${p3Periods.join(',')})`);
+      assert(grid.every((g) => g.length === 5), 'court still filled after a player leaves');
+    }
+
+    log('info', '\n=== Front-load weighting ===');
+    {
+      const { grid } = run('peewee', 8, { front: [0] });
+      const periods = grid.map((g, i) => g.includes('p0') ? i + 1 : null).filter(Boolean);
+      const avg = periods.reduce((a, b) => a + b, 0) / periods.length;
+      assert(avg <= 2.5, `front-loaded player skews to early periods (avg period ${avg})`);
+    }
+
+    log(failed === 0 ? 'pass' : 'fail', `\n${passed} passed, ${failed} failed`);
+    window.__TESTS__ = { passed, failed };
+  </script>
+</body>
+</html>
