@@ -122,6 +122,9 @@ label.field > span { display: block; font-size: 13px; color: var(--muted); margi
 table.grid { border-collapse: collapse; width: max-content; min-width: 100%; }
 table.grid th, table.grid td { border: 1px solid var(--line); text-align: center; }
 table.grid thead th { background: var(--surface); font-size: 11px; padding: 6px 4px; position: sticky; top: 0; }
+table.grid thead th.sortable { cursor: pointer; user-select: none; }
+table.grid thead th.sortable:active { background: var(--line); }
+table.grid thead .sort-arrow { color: var(--accent); font-weight: 700; }
 table.grid thead .sub { color: var(--muted); font-weight: 500; display: block; font-size: 10px; }
 table.grid th.player { position: sticky; left: 0; z-index: 2; background: var(--surface);
   text-align: left; padding: 8px; min-width: 116px; max-width: 116px; }
