@@ -441,9 +441,7 @@ function positionControls(team, g, div) {
     el('div', { class: 'row between' }, [el('strong', { text: 'Positions' }), seg]),
   ]);
 
-  if (mode === 'off') {
-    wrap.appendChild(el('p', { class: 'muted', style: 'margin:8px 0 0;font-size:13px', text: 'No auto positions. Tap a cell to tag one by hand.' }));
-  } else if (mode === 'fixed') {
+  if (mode === 'fixed') {
     wrap.appendChild(positionGroupEditor(team, g));
   }
   return wrap;
@@ -523,7 +521,6 @@ function gridView(team, g, div) {
   ])]);
 
   return el('div', {}, [
-    el('p', { class: 'muted', style: 'font-size:13px;margin:4px 0', text: `${div.minutesPerPeriod} min/period · numbers = position · tap a cell to sub or pin a spot` }),
     el('div', { class: 'grid-wrap' }, [el('table', { class: 'grid' }, [thead, tbody, tfoot])]),
   ]);
 }

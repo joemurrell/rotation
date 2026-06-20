@@ -14,7 +14,7 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; height: 100%; }
+html, body { margin: 0; height: 100%; height: 100dvh; }
 body {
   background: var(--bg);
   color: var(--text);
@@ -22,6 +22,7 @@ body {
   display: flex;
   flex-direction: column;
   padding-top: env(safe-area-inset-top);
+  overflow: hidden; /* #screen owns scrolling; keeps the tab bar pinned flush to the true bottom */
 }
 
 /* App bar */
