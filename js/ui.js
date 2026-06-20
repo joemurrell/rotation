@@ -152,7 +152,7 @@ function screenRoster(team) {
   const wrap = el('div', {}, [el('h2', { text: `${team.name} · Roster` })]);
   if (team.roster.length === 0) wrap.appendChild(el('p', { class: 'muted', text: 'No players yet. Add them below.' }));
 
-  for (const p of team.roster) {
+  for (const p of byName(team.roster)) {
     wrap.appendChild(el('div', { class: 'card' }, [
       el('div', { class: 'row between' }, [
         el('div', { class: 'grow' }, [
@@ -263,7 +263,7 @@ function screenNewGame(team) {
   refreshGen();
 
   const list = el('div', { class: 'card', style: 'padding:0' });
-  for (const p of team.roster) {
+  for (const p of byName(team.roster)) {
     const row = el('div', {});
     const buildRow = () => {
       row.innerHTML = '';
@@ -443,18 +443,14 @@ function positionControls(team, g, div) {
 
   if (mode === 'off') {
     wrap.appendChild(el('p', { class: 'muted', style: 'margin:8px 0 0;font-size:13px', text: 'No auto positions. Tap a cell to tag one by hand.' }));
-  } else if (mode === 'spread') {
-    wrap.appendChild(el('p', { class: 'muted', style: 'margin:8px 0 0;font-size:13px', text: 'Each player rotates through as many of 1–5 as possible — no repeats until they’ve cycled.' }));
-  } else {
-    wrap.appendChild(el('p', { class: 'muted', style: 'margin:8px 0 6px;font-size:13px', text: 'Pick 1–2 spots each player sticks to this game. Tap to set; change them week to week.' }));
+  } else if (mode === 'fixed') {
     wrap.appendChild(positionGroupEditor(team, g));
   }
-  wrap.appendChild(el('div', { class: 'tag', style: 'margin-top:8px', text: '1 PG · 2 SG · 3 SF · 4 PF · 5 C' }));
   return wrap;
 }
 
 function positionGroupEditor(team, g) {
-  const present = team.roster.filter((p) => g.presentIds.includes(p.id));
+  const present = byName(team.roster.filter((p) => g.presentIds.includes(p.id)));
   const box = el('div', { class: 'stack' });
   for (const p of present) {
     const group = new Set(g.positionGroups[p.id] || []);
@@ -485,7 +481,7 @@ function regenerate(team, g) {
 }
 
 function gridView(team, g, div) {
-  const present = team.roster.filter((p) => g.presentIds.includes(p.id));
+  const present = byName(team.roster.filter((p) => g.presentIds.includes(p.id)));
   const periods = div.periods;
 
   const thead = el('thead', {}, [el('tr', {}, [
@@ -574,7 +570,7 @@ function liveView(team, g, div) {
   const prev = livePeriod > 0 ? (g.grid[livePeriod - 1] || []) : [];
   const comingIn = onNow.filter((id) => !prev.includes(id));
   const goingOut = prev.filter((id) => !onNow.includes(id));
-  const benchNow = team.roster.filter((p) => g.presentIds.includes(p.id) && !onNow.includes(p.id));
+  const benchNow = byName(team.roster.filter((p) => g.presentIds.includes(p.id) && !onNow.includes(p.id)));
 
   const subsBlock = livePeriod === 0 ? null : el('div', { class: 'card' }, [
     el('h4', { text: 'Subs at ' + div.subLabels[livePeriod], style: 'margin:0 0 8px;color:var(--muted)' }),
@@ -670,3 +666,4 @@ function importFile(file) {
 
 // ---- util ----
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function byName(list) { return [...list].sort((a, b) => a.name.localeCompare(b.name)); }
