@@ -19,7 +19,16 @@ and it **works offline** at the gym once it's loaded.
 - **Adjust for real life:** a player who leaves at halftime or arrives late (availability
   window), or **front-load** a kid's minutes earlier in the game. The court is always
   re-filled around them.
-- **Tweak by hand:** tap any cell to sub a player on/off or tag a position.
+- **Positions (1=PG, 2=SG, 3=SF, 4=PF, 5=C)** — pick a mode per game on the rotation screen:
+  - **Off** — no auto positions; tap a cell to tag one by hand.
+  - **Spread** — rotates each player through as many different positions as possible, no
+    repeats until they've cycled. Maximum variety.
+  - **Fixed** — assign each kid 1–2 spots they stick to that game (e.g. a guard at 1/2, a post
+    swapping 4/5). Less confusing for the kids, and the app alternates within their group.
+    Entering Fixed mode pre-fills each player's group from your previous game so you only
+    tweak what changed week to week.
+- **Tweak by hand:** tap any cell to sub a player on/off or pin a specific position (a pinned
+  spot overrides auto-assignment).
 - **Live mode:** big courtside view showing who subs **IN / OUT** at each break.
 - **Season tracking:** cumulative minutes, periods, and games per player (and time by
   position if you tag them). Mark a game "final" to add it to the totals.

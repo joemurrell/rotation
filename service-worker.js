@@ -1,6 +1,6 @@
 // Offline app-shell cache so the app opens at the gym with no signal.
 // Bump CACHE when you change any cached file to force an update.
-const CACHE = 'bbrotation-v1';
+const CACHE = 'bbrotation-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -13,6 +13,7 @@ const ASSETS = [
   './js/stats.js',
   './js/rules.js',
   './js/rotation.js',
+  './js/positions.js',
 ];
 
 self.addEventListener('install', (e) => {

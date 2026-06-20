@@ -3,7 +3,9 @@ import * as store from './store.js';
 import { getDivision, DIVISION_LIST } from './rules.js';
 import { generateRotation, validateRotation, availabilityFromWindow } from './rotation.js';
 import { seasonStats, finalizedGameCount } from './stats.js';
+import { assignPositions, POSITIONS, posLabel } from './positions.js';
 
+// Labels used for the optional "preferred positions" tags on the roster.
 const DEFAULT_POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
 
 // ---- tiny DOM helpers ----
@@ -369,9 +371,12 @@ function screenRotation(team, g) {
     } }),
   ]));
 
-  // warnings
+  // keep the position layer in sync with the current grid/mode/groups/locks
+  const posWarnings = recomputePositions(team, g);
+
+  // warnings (minutes rules + positions)
   const players = buildGenPlayers(team, new Set(g.presentIds), g.windows || {}, new Set(g.frontLoad || []), div.periods);
-  const warnings = validateRotation(div, players, g.grid);
+  const warnings = [...validateRotation(div, players, g.grid), ...posWarnings];
   if (warnings.length) {
     wrap.appendChild(el('div', { class: 'warns' }, warnings.map((w) => el('div', { class: 'warn', text: '⚠ ' + w }))));
   }
@@ -385,8 +390,86 @@ function screenRotation(team, g) {
       : el('button', { class: 'btn sm success', text: '✓ Mark final', onclick: () => { store.updateGame(team.id, g.id, { finalized: true }); render(); toast('Added to season totals'); } }),
   ]));
 
+  if (!liveOn) wrap.appendChild(positionControls(team, g, div));
   wrap.appendChild(liveOn ? liveView(team, g, div) : gridView(team, g, div));
   return wrap;
+}
+
+// ---- positions ----
+const POS_MODES = [
+  { id: 'off', label: 'Off' },
+  { id: 'spread', label: 'Spread' },
+  { id: 'fixed', label: 'Fixed' },
+];
+
+function recomputePositions(team, g) {
+  const mode = g.positionMode || 'off';
+  if (mode === 'off') {
+    g.positions = { ...(g.positionLocks || {}) };
+    store.updateGame(team.id, g.id, { positions: g.positions });
+    return [];
+  }
+  const { byCell, warnings } = assignPositions({
+    grid: g.grid, mode, groups: g.positionGroups || {}, locks: g.positionLocks || {},
+  });
+  g.positions = byCell;
+  store.updateGame(team.id, g.id, { positions: byCell });
+  const div = getDivision(team.division);
+  const nameOf = (id) => team.roster.find((p) => p.id === id)?.name || '?';
+  return warnings.map((w) =>
+    `${div.periodLabels[w.period]}: no open spot for ${w.pids.map(nameOf).join(', ')} — position groups too tight.`);
+}
+
+function setPosMode(team, g, mode) {
+  // entering fixed mode with no groups yet? seed from the team's previous game.
+  if (mode === 'fixed' && Object.keys(g.positionGroups || {}).length === 0) {
+    const prev = team.games.find((x) => x.id !== g.id && Object.keys(x.positionGroups || {}).length);
+    g.positionGroups = prev ? { ...prev.positionGroups } : {};
+  }
+  store.updateGame(team.id, g.id, { positionMode: mode, positionGroups: g.positionGroups || {} });
+  render();
+}
+
+function positionControls(team, g, div) {
+  const mode = g.positionMode || 'off';
+  const seg = el('div', { class: 'row', style: 'gap:6px' }, POS_MODES.map((m) =>
+    el('button', { class: 'btn sm' + (m.id === mode ? ' primary' : ''), text: m.label, onclick: () => setPosMode(team, g, m.id) })));
+
+  const wrap = el('div', { class: 'card', style: 'margin-bottom:10px' }, [
+    el('div', { class: 'row between' }, [el('strong', { text: 'Positions' }), seg]),
+  ]);
+
+  if (mode === 'off') {
+    wrap.appendChild(el('p', { class: 'muted', style: 'margin:8px 0 0;font-size:13px', text: 'No auto positions. Tap a cell to tag one by hand.' }));
+  } else if (mode === 'spread') {
+    wrap.appendChild(el('p', { class: 'muted', style: 'margin:8px 0 0;font-size:13px', text: 'Each player rotates through as many of 1–5 as possible — no repeats until they’ve cycled.' }));
+  } else {
+    wrap.appendChild(el('p', { class: 'muted', style: 'margin:8px 0 6px;font-size:13px', text: 'Pick 1–2 spots each player sticks to this game. Tap to set; change them week to week.' }));
+    wrap.appendChild(positionGroupEditor(team, g));
+  }
+  wrap.appendChild(el('div', { class: 'tag', style: 'margin-top:8px', text: '1 PG · 2 SG · 3 SF · 4 PF · 5 C' }));
+  return wrap;
+}
+
+function positionGroupEditor(team, g) {
+  const present = team.roster.filter((p) => g.presentIds.includes(p.id));
+  const box = el('div', { class: 'stack' });
+  for (const p of present) {
+    const group = new Set(g.positionGroups[p.id] || []);
+    const chips = el('div', { class: 'chips' }, POSITIONS.map((n) =>
+      el('button', { class: 'chip' + (group.has(n) ? ' sel' : ''), text: String(n), onclick: () => {
+        if (group.has(n)) group.delete(n);
+        else { if (group.size >= 2) return toast('Up to 2 positions each'); group.add(n); }
+        g.positionGroups[p.id] = [...group].sort();
+        store.updateGame(team.id, g.id, { positionGroups: g.positionGroups });
+        render();
+      } })));
+    box.appendChild(el('div', { class: 'row between', style: 'gap:8px;flex-wrap:wrap' }, [
+      el('div', { class: 'ellipsis', style: 'min-width:80px;font-weight:600', text: p.number ? `${p.name} #${p.number}` : p.name }),
+      chips,
+    ]));
+  }
+  return box;
 }
 
 function regenerate(team, g) {
@@ -394,7 +477,8 @@ function regenerate(team, g) {
   const players = buildGenPlayers(team, new Set(g.presentIds), g.windows || {}, new Set(g.frontLoad || []), div.periods);
   const seed = ((g.seed || 1) * 1103515245 + 12345) & 0x7fffffff;
   const { grid } = generateRotation({ ...div, players, seed });
-  store.updateGame(team.id, g.id, { grid, seed, positions: {} });
+  // new on-court sets invalidate manual position locks
+  store.updateGame(team.id, g.id, { grid, seed, positionLocks: {} });
   render();
 }
 
@@ -417,9 +501,10 @@ function gridView(team, g, div) {
       const on = g.grid[period]?.includes(p.id);
       if (on) total++;
       const pos = g.positions?.[`${period}:${p.id}`];
+      const locked = g.positionLocks?.[`${period}:${p.id}`] != null;
       const td = el('td', {
-        class: 'cell' + (on ? ' on' : '') + (on && pos ? ' haspos' : ''),
-        text: on ? (pos || '●') : '',
+        class: 'cell' + (on ? ' on' : '') + (on && pos ? ' haspos' : '') + (on && locked ? ' locked' : ''),
+        text: on ? (pos != null ? String(pos) : '●') : '',
         onclick: () => cellSheet(team, g, div, period, p),
       });
       cells.push(td);
@@ -440,7 +525,7 @@ function gridView(team, g, div) {
   ])]);
 
   return el('div', {}, [
-    el('p', { class: 'muted', style: 'font-size:13px;margin:4px 0', text: `${div.minutesPerPeriod} min/period · tap a cell to sub or set a position` }),
+    el('p', { class: 'muted', style: 'font-size:13px;margin:4px 0', text: `${div.minutesPerPeriod} min/period · numbers = position · tap a cell to sub or pin a spot` }),
     el('div', { class: 'grid-wrap' }, [el('table', { class: 'grid' }, [thead, tbody, tfoot])]),
   ]);
 }
@@ -452,19 +537,20 @@ function cellSheet(team, g, div, period, player) {
     if (onCourt) {
       sheet.appendChild(el('button', { class: 'btn block danger', text: '⬇ Sub to bench', onclick: () => {
         g.grid[period] = g.grid[period].filter((id) => id !== player.id);
-        delete g.positions[key];
-        store.updateGame(team.id, g.id, { grid: g.grid, positions: g.positions });
+        delete g.positionLocks[key];
+        store.updateGame(team.id, g.id, { grid: g.grid, positionLocks: g.positionLocks });
         close(); render();
       } }));
-      sheet.appendChild(el('h3', { text: 'Position this period' }));
-      const opts = [...new Set([...(player.positions || []), ...DEFAULT_POSITIONS])];
-      sheet.appendChild(el('div', { class: 'chips' }, opts.map((pos) =>
-        el('button', { class: 'chip' + (g.positions[key] === pos ? ' sel' : ''), text: pos, onclick: () => {
-          if (g.positions[key] === pos) delete g.positions[key]; else g.positions[key] = pos;
-          store.updateGame(team.id, g.id, { positions: g.positions });
+      sheet.appendChild(el('h3', { text: 'Pin a position this period' }));
+      const cur = g.positionLocks?.[key];
+      sheet.appendChild(el('div', { class: 'chips' }, POSITIONS.map((n) =>
+        el('button', { class: 'chip' + (cur === n ? ' sel' : ''), text: posLabel(n), onclick: () => {
+          if (g.positionLocks[key] === n) delete g.positionLocks[key]; else g.positionLocks[key] = n;
+          store.updateGame(team.id, g.id, { positionLocks: g.positionLocks });
           close(); render();
         } })
       )));
+      if (cur != null) sheet.appendChild(el('p', { class: 'muted', style: 'font-size:13px', text: 'Pinned spots override auto-assignment.' }));
     } else {
       sheet.appendChild(el('p', { class: 'muted', text: (g.grid[period]?.length || 0) >= div.court ? `${div.court} already on court — adding makes ${(g.grid[period]?.length || 0) + 1}.` : '' }));
       sheet.appendChild(el('button', { class: 'btn block success', text: '⬆ Put on court', onclick: () => {
@@ -513,7 +599,7 @@ function liveView(team, g, div) {
     ]),
   ]);
 }
-function posSuffix(g, period, id) { const pos = g.positions?.[`${period}:${id}`]; return pos ? ` · ${pos}` : ''; }
+function posSuffix(g, period, id) { const pos = g.positions?.[`${period}:${id}`]; return pos != null ? ` · ${posLabel(pos)}` : ''; }
 
 // ================= SEASON =================
 function screenSeason(team) {
@@ -526,7 +612,7 @@ function screenSeason(team) {
   const maxMin = Math.max(1, ...rows.map((r) => r.minutes));
   for (const r of rows) {
     const posLine = Object.keys(r.byPosition).length
-      ? Object.entries(r.byPosition).map(([k, v]) => `${k} ${v}m`).join(' · ') : '';
+      ? Object.entries(r.byPosition).sort((a, b) => a[0] - b[0]).map(([k, v]) => `${posLabel(+k)} ${v}m`).join(' · ') : '';
     wrap.appendChild(el('div', { class: 'card' }, [
       el('div', { class: 'row between' }, [
         el('div', { class: 'grow' }, [

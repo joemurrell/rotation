@@ -84,7 +84,10 @@ export function addGame(teamId, game) {
     windows: game.windows || {},     // playerId -> {from,to} (1-based period window)
     frontLoad: game.frontLoad || [], // playerIds
     grid: game.grid || [],           // [period][playerId,...]
-    positions: game.positions || {}, // "period:playerId" -> position label
+    positions: game.positions || {}, // "period:playerId" -> effective position (1-5)
+    positionMode: game.positionMode || 'off', // 'off' | 'spread' | 'fixed'
+    positionGroups: game.positionGroups || {}, // fixed mode: playerId -> [positions]
+    positionLocks: game.positionLocks || {},   // "period:playerId" -> position (manual override)
     seed: game.seed || 1,
     finalized: false,
   };
