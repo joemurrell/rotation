@@ -401,22 +401,27 @@ function screenRotation(team, g) {
     wrap.appendChild(el('div', { class: 'warns' }, warnings.map((w) => el('div', { class: 'warn', text: '⚠ ' + w }))));
   }
 
-  // controls
-  wrap.appendChild(el('div', { class: 'row', style: 'gap:8px;margin:10px 0' }, [
-    el('button', { class: 'btn sm', text: '🔀 Regenerate', onclick: () => confirmAction({
+  // controls — a finalized game is locked (read-only) until unfinalized
+  const frozen = !!g.finalized;
+  const controls = [];
+  if (!frozen) {
+    controls.push(el('button', { class: 'btn sm', text: '🔀 Regenerate', onclick: () => confirmAction({
       title: 'Regenerate rotation?',
       message: 'This replaces the current grid and any manual subs or pinned positions.',
       confirmLabel: 'Regenerate', danger: false,
       onConfirm: () => regenerate(team, g),
-    }) }),
-    el('button', { class: 'btn sm' + (liveOn ? ' primary' : ''), text: liveOn ? '📋 Grid' : '▶ Live', onclick: () => { liveOn = !liveOn; render(); } }),
-    g.finalized
-      ? el('button', { class: 'btn sm', text: '↩ Unfinalize', onclick: () => { store.updateGame(team.id, g.id, { finalized: false }); render(); toast('Removed from season totals'); } })
-      : el('button', { class: 'btn sm success', text: '✓ Mark final', onclick: () => { store.updateGame(team.id, g.id, { finalized: true }); render(); toast('Added to season totals'); } }),
-  ]));
+    }) }));
+  }
+  controls.push(el('button', { class: 'btn sm' + (liveOn ? ' primary' : ''), text: liveOn ? '📋 Grid' : '▶ Live', onclick: () => { liveOn = !liveOn; render(); } }));
+  controls.push(frozen
+    ? el('button', { class: 'btn sm', text: '🔓 Unfinalize', onclick: () => { store.updateGame(team.id, g.id, { finalized: false }); render(); toast('Unlocked — removed from season totals'); } })
+    : el('button', { class: 'btn sm success', text: '✓ Mark final', onclick: () => { store.updateGame(team.id, g.id, { finalized: true }); render(); toast('Locked — added to season totals'); } }));
+  wrap.appendChild(el('div', { class: 'row', style: 'gap:8px;margin:10px 0' }, controls));
 
-  if (!liveOn) wrap.appendChild(positionControls(team, g, div));
-  wrap.appendChild(liveOn ? liveView(team, g, div) : gridView(team, g, div));
+  if (frozen) wrap.appendChild(el('div', { class: 'locked-note', text: '🔒 Final — unfinalize to edit subs or positions.' }));
+
+  if (!liveOn && !frozen) wrap.appendChild(positionControls(team, g, div));
+  wrap.appendChild(liveOn ? liveView(team, g, div) : gridView(team, g, div, frozen));
   return wrap;
 }
 
@@ -501,7 +506,7 @@ function regenerate(team, g) {
   render();
 }
 
-function gridView(team, g, div) {
+function gridView(team, g, div, frozen = false) {
   const present = byName(team.roster.filter((p) => g.presentIds.includes(p.id)));
   const periods = div.periods;
 
@@ -520,11 +525,11 @@ function gridView(team, g, div) {
       const on = g.grid[period]?.includes(p.id);
       if (on) total++;
       const pos = g.positions?.[`${period}:${p.id}`];
-      const locked = g.positionLocks?.[`${period}:${p.id}`] != null;
+      const pinned = g.positionLocks?.[`${period}:${p.id}`] != null;
       const td = el('td', {
-        class: 'cell' + (on ? ' on' : '') + (on && pos ? ' haspos' : '') + (on && locked ? ' locked' : ''),
+        class: 'cell' + (on ? ' on' : '') + (on && pos ? ' haspos' : '') + (on && pinned ? ' locked' : '') + (frozen ? ' ro' : ''),
         text: on ? (pos != null ? String(pos) : '●') : '',
-        onclick: () => cellSheet(team, g, div, period, p),
+        ...(frozen ? {} : { onclick: () => cellSheet(team, g, div, period, p) }),
       });
       cells.push(td);
     }
