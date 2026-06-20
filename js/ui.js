@@ -383,7 +383,9 @@ function screenRotation(team, g) {
 
   // controls
   wrap.appendChild(el('div', { class: 'row', style: 'gap:8px;margin:10px 0' }, [
-    el('button', { class: 'btn sm', text: '🔀 Regenerate', onclick: () => regenerate(team, g) }),
+    el('button', { class: 'btn sm', text: '🔀 Regenerate', onclick: () => {
+      if (confirm('Regenerate this rotation? This replaces the current grid and any manual subs or pinned positions.')) regenerate(team, g);
+    } }),
     el('button', { class: 'btn sm' + (liveOn ? ' primary' : ''), text: liveOn ? '📋 Grid' : '▶ Live', onclick: () => { liveOn = !liveOn; render(); } }),
     g.finalized
       ? el('button', { class: 'btn sm', text: '↩ Unfinalize', onclick: () => { store.updateGame(team.id, g.id, { finalized: false }); render(); toast('Removed from season totals'); } })
