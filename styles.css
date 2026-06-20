@@ -89,6 +89,8 @@ button.btn, .btn {
 .btn.ghost { background: transparent; }
 .btn.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
 .btn.block { width: 100%; }
+/* Destructive confirm button: filled red so it clearly reads as "this deletes". */
+.btn.danger-solid { background: var(--danger); color: #fff; border-color: var(--danger); }
 .btn.sm { min-height: 36px; padding: 6px 12px; font-size: 14px; }
 .btn:disabled { opacity: .5; }
 

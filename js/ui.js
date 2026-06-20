@@ -44,6 +44,18 @@ function openSheet(title, builder) {
 }
 function closeSheet() { $('#sheet-root').innerHTML = ''; }
 
+// Reusable confirm dialog for destructive actions (matches the app's sheet UI).
+function confirmAction({ title, message, confirmLabel = 'Delete', danger = true, onConfirm }) {
+  openSheet(title, (sheet, close) => {
+    if (message) sheet.appendChild(el('p', { class: 'muted', text: message }));
+    sheet.appendChild(el('div', { class: 'stack', style: 'margin-top:14px' }, [
+      el('button', { class: 'btn block ' + (danger ? 'danger-solid' : 'primary'), text: confirmLabel,
+        onclick: () => { close(); onConfirm(); } }),
+      el('button', { class: 'btn block ghost', text: 'Cancel', onclick: close }),
+    ]));
+  });
+}
+
 // ---- view state ----
 let view = { tab: 'games', screen: 'list', gameId: null };
 let livePeriod = 0;          // for live mode
@@ -117,9 +129,11 @@ function screenTeams() {
       ]),
       el('div', { class: 'row', style: 'margin-top:10px;gap:8px' }, [
         el('button', { class: 'btn sm ghost', text: 'Rename', onclick: () => renameTeam(t) }),
-        el('button', { class: 'btn sm danger', text: 'Delete', onclick: () => {
-          if (confirm(`Delete team "${t.name}" and its games?`)) { store.deleteTeam(t.id); render(); }
-        } }),
+        el('button', { class: 'btn sm danger', text: 'Delete', onclick: () => confirmAction({
+          title: `Delete team “${t.name}”?`,
+          message: 'This deletes the team, its roster, and all of its games. This can’t be undone.',
+          onConfirm: () => { store.deleteTeam(t.id); render(); },
+        }) }),
       ]),
     ]));
   }
@@ -161,7 +175,11 @@ function screenRoster(team) {
         ]),
         el('div', { class: 'row', style: 'gap:6px' }, [
           el('button', { class: 'btn sm ghost', text: 'Edit', onclick: () => editPlayer(team, p) }),
-          el('button', { class: 'btn sm danger', text: '✕', onclick: () => { store.deletePlayer(team.id, p.id); render(); } }),
+          el('button', { class: 'btn sm danger', text: '✕', onclick: () => confirmAction({
+            title: `Delete ${p.name}?`,
+            message: 'This also removes their season playing-time totals. This can’t be undone.',
+            onConfirm: () => { store.deletePlayer(team.id, p.id); render(); },
+          }) }),
         ]),
       ]),
     ]));
@@ -366,9 +384,11 @@ function screenRotation(team, g) {
   wrap.appendChild(el('div', { class: 'row between' }, [
     el('button', { class: 'btn sm ghost', text: '‹ Games', onclick: () => go({ screen: 'list' }) }),
     el('div', { html: `<strong>${esc(g.date)}</strong>${g.opponent ? ` vs ${esc(g.opponent)}` : ''}`, style: 'text-align:center' }),
-    el('button', { class: 'btn sm danger', text: '✕', onclick: () => {
-      if (confirm('Delete this game?')) { store.deleteGame(team.id, g.id); go({ screen: 'list' }); }
-    } }),
+    el('button', { class: 'btn sm danger', text: '✕', onclick: () => confirmAction({
+      title: 'Delete this game?',
+      message: 'This removes the rotation and its season totals. This can’t be undone.',
+      onConfirm: () => { store.deleteGame(team.id, g.id); go({ screen: 'list' }); },
+    }) }),
   ]));
 
   // keep the position layer in sync with the current grid/mode/groups/locks
@@ -383,9 +403,12 @@ function screenRotation(team, g) {
 
   // controls
   wrap.appendChild(el('div', { class: 'row', style: 'gap:8px;margin:10px 0' }, [
-    el('button', { class: 'btn sm', text: '🔀 Regenerate', onclick: () => {
-      if (confirm('Regenerate this rotation? This replaces the current grid and any manual subs or pinned positions.')) regenerate(team, g);
-    } }),
+    el('button', { class: 'btn sm', text: '🔀 Regenerate', onclick: () => confirmAction({
+      title: 'Regenerate rotation?',
+      message: 'This replaces the current grid and any manual subs or pinned positions.',
+      confirmLabel: 'Regenerate', danger: false,
+      onConfirm: () => regenerate(team, g),
+    }) }),
     el('button', { class: 'btn sm' + (liveOn ? ' primary' : ''), text: liveOn ? '📋 Grid' : '▶ Live', onclick: () => { liveOn = !liveOn; render(); } }),
     g.finalized
       ? el('button', { class: 'btn sm', text: '↩ Unfinalize', onclick: () => { store.updateGame(team.id, g.id, { finalized: false }); render(); toast('Removed from season totals'); } })
@@ -653,11 +676,15 @@ function downloadBackup() {
 function importFile(file) {
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = () => {
-    if (!confirm('Replace ALL current data with this backup?')) return;
-    try { store.importJSON(reader.result); view = { tab: 'games', screen: 'list', gameId: null }; render(); toast('Restored'); }
-    catch (e) { toast('Import failed: ' + e.message); }
-  };
+  reader.onload = () => confirmAction({
+    title: 'Replace all data?',
+    message: 'This replaces ALL teams, rosters, and games with the backup. This can’t be undone.',
+    confirmLabel: 'Replace data',
+    onConfirm: () => {
+      try { store.importJSON(reader.result); view = { tab: 'games', screen: 'list', gameId: null }; render(); toast('Restored'); }
+      catch (e) { toast('Import failed: ' + e.message); }
+    },
+  });
   reader.readAsText(file);
 }
 
