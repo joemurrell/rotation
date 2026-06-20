@@ -69,7 +69,12 @@ export function mount() {
   render();
 }
 
-function go(next) { view = { ...view, ...next }; closeSheet(); render(); }
+function go(next) {
+  if (next.gameId !== undefined && next.gameId !== view.gameId) gridSort = { key: 'name', dir: 'asc' };
+  view = { ...view, ...next };
+  closeSheet();
+  render();
+}
 
 function render() {
   renderHeader();
@@ -376,6 +381,7 @@ function generateAndOpen(team) {
 
 // ================= ROTATION VIEW =================
 let liveOn = false;
+let gridSort = { key: 'name', dir: 'asc' };  // Game grid column sort: 'name' | 'total' | period index
 
 function screenRotation(team, g) {
   const div = getDivision(team.division);
@@ -510,25 +516,55 @@ function gridView(team, g, div, frozen = false) {
   const present = byName(team.roster.filter((p) => g.presentIds.includes(p.id)));
   const periods = div.periods;
 
+  const rows = present.map((p) => {
+    const on = [];
+    let total = 0;
+    for (let period = 0; period < periods; period++) {
+      const isOn = !!g.grid[period]?.includes(p.id);
+      on.push(isOn);
+      if (isOn) total++;
+    }
+    return { p, on, total };
+  });
+
+  const setSort = (key) => {
+    if (gridSort.key === key) gridSort.dir = gridSort.dir === 'asc' ? 'desc' : 'asc';
+    else gridSort = { key, dir: key === 'name' ? 'asc' : 'desc' };
+    render();
+  };
+  const arrow = (key) => gridSort.key === key
+    ? el('span', { class: 'sort-arrow', text: gridSort.dir === 'asc' ? ' ▲' : ' ▼' })
+    : null;
+
+  const mul = gridSort.dir === 'asc' ? 1 : -1;
+  rows.sort((a, b) => {
+    let cmp;
+    if (gridSort.key === 'name') cmp = a.p.name.localeCompare(b.p.name);
+    else if (gridSort.key === 'total') cmp = a.total - b.total;
+    else cmp = Number(a.on[gridSort.key]) - Number(b.on[gridSort.key]);
+    if (cmp === 0) cmp = a.p.name.localeCompare(b.p.name);
+    return cmp * mul;
+  });
+
   const thead = el('thead', {}, [el('tr', {}, [
-    el('th', { class: 'player', text: 'Player' }),
+    el('th', { class: 'player sortable', onclick: () => setSort('name') }, ['Player', arrow('name')]),
     ...Array.from({ length: periods }, (_, i) =>
-      el('th', {}, [el('span', { class: 'sub', text: div.subLabels[i] }), document.createTextNode(div.periodLabels[i])])),
-    el('th', { text: 'Tot' }),
+      el('th', { class: 'sortable', onclick: () => setSort(i) }, [
+        el('span', { class: 'sub', text: div.subLabels[i] }), document.createTextNode(div.periodLabels[i]), arrow(i),
+      ])),
+    el('th', { class: 'sortable', onclick: () => setSort('total') }, ['Tot', arrow('total')]),
   ])]);
 
   const tbody = el('tbody');
-  for (const p of present) {
+  for (const { p, on, total } of rows) {
     const cells = [];
-    let total = 0;
     for (let period = 0; period < periods; period++) {
-      const on = g.grid[period]?.includes(p.id);
-      if (on) total++;
+      const isOn = on[period];
       const pos = g.positions?.[`${period}:${p.id}`];
       const pinned = g.positionLocks?.[`${period}:${p.id}`] != null;
       const td = el('td', {
-        class: 'cell' + (on ? ' on' : '') + (on && pos ? ' haspos' : '') + (on && pinned ? ' locked' : '') + (frozen ? ' ro' : ''),
-        text: on ? (pos != null ? String(pos) : '●') : '',
+        class: 'cell' + (isOn ? ' on' : '') + (isOn && pos ? ' haspos' : '') + (isOn && pinned ? ' locked' : '') + (frozen ? ' ro' : ''),
+        text: isOn ? (pos != null ? String(pos) : '●') : '',
         ...(frozen ? {} : { onclick: () => cellSheet(team, g, div, period, p) }),
       });
       cells.push(td);
