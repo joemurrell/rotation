@@ -550,7 +550,7 @@ function gridView(team, g, div, frozen = false) {
     el('th', { class: 'player sortable', onclick: () => setSort('name') }, ['Player', arrow('name')]),
     ...Array.from({ length: periods }, (_, i) =>
       el('th', { class: 'sortable', onclick: () => setSort(i) }, [
-        el('span', { class: 'sub', text: div.subLabels[i] }), document.createTextNode(div.periodLabels[i]), arrow(i),
+        document.createTextNode(div.periodLabels[i]), arrow(i),
       ])),
     el('th', { class: 'sortable', onclick: () => setSort('total') }, ['Tot', arrow('total')]),
   ])]);
