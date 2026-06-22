@@ -65,6 +65,20 @@ Open **`tests/rotation.test.html`** in a browser (via the local server above). I
 rotation generator across both divisions and 5–10 players and asserts fairness,
 consecutive-period limits, the sit-one rule, availability windows, and front-loading.
 
+## Development setup
+
+The repo ships a git hook that keeps the service worker cache fresh. Enable it once
+per clone so deployed changes actually reach returning users:
+
+```
+git config core.hooksPath .githooks
+```
+
+On each commit it runs `scripts/bump-sw-cache.mjs`, which sets the service worker's
+`CACHE` name to a hash of the cached assets — it changes automatically when any cached
+file changes, and stays put otherwise. (Requires Node.) You can also run it by hand:
+`node scripts/bump-sw-cache.mjs`.
+
 ## How it's built
 
 Plain HTML + CSS + vanilla JavaScript (ES modules) — no framework, no dependencies, no CDNs.
@@ -77,7 +91,8 @@ Plain HTML + CSS + vanilla JavaScript (ES modules) — no framework, no dependen
 | `js/stats.js` | Season aggregation from finalized games |
 | `js/ui.js` | Screens and event wiring |
 | `js/app.js` | Entry point + service-worker registration |
-| `service-worker.js` | Offline app-shell cache |
+| `service-worker.js` | Offline app-shell cache (cache name auto-bumped on commit) |
+| `scripts/bump-sw-cache.mjs` | Derives the SW cache name from a hash of cached assets |
 
 ### Replacing the app icon
 `icons/icon.svg` is a simple placeholder. Swap it for your own (or add PNG sizes and list

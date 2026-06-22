@@ -1,6 +1,7 @@
 // Offline app-shell cache so the app opens at the gym with no signal.
-// Bump CACHE when you change any cached file to force an update.
-const CACHE = 'bbrotation-v9';
+// CACHE is auto-derived from the cached assets by scripts/bump-sw-cache.mjs
+// (run by the pre-commit hook) — no need to bump it by hand.
+const CACHE = 'bbrotation-2a7477c3';
 const ASSETS = [
   './',
   './index.html',

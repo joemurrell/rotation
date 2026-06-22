@@ -1,0 +1,6 @@
+#!/bin/sh
+# Auto-bump the service worker cache name when cached assets change, so
+# deployed updates actually reach returning users (the SW is cache-first).
+# Enable once per clone with: git config core.hooksPath .githooks
+node scripts/bump-sw-cache.mjs || exit 1
+git add service-worker.js
