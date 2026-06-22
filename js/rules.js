@@ -20,7 +20,7 @@ export const DIVISIONS = {
   },
   mightymight: {
     id: 'mightymight',
-    name: 'Mighty Might',
+    name: 'Might Mite',
     court: 5,
     periods: 8,           // mid-quarter + end-of-quarter splits each quarter in two
     minutesPerPeriod: 5,
