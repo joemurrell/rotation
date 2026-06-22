@@ -13,7 +13,7 @@ and it **works offline** at the gym once it's loaded.
   - **Pee Wee** — four 6-minute quarters, sub at the end of each quarter (4 periods). No
     player plays more than 2 quarters in a row when avoidable; exactly 10 present → two
     platoons of 5 alternate.
-  - **Might Mite** — four 10-minute quarters split at the midpoint (8 five-minute periods).
+  - **Mighty Mite** — four 10-minute quarters split at the midpoint (8 five-minute periods).
     Everyone sits at least one period unless 6 or fewer are present.
 - **Check who's present** at a game and **auto-generate** a balanced rotation.
 - **Adjust for real life:** a player who leaves at halftime or arrives late (availability

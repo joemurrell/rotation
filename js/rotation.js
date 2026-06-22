@@ -131,7 +131,7 @@ function platoonRotation(players, periods, court, rng) {
   return { grid, counts, warnings: [] };
 }
 
-// Make sure no eligible player plays every single period (Might Mite).
+// Make sure no eligible player plays every single period (Mighty Mite).
 function enforceSitOnce(grid, players, periods, court) {
   const ids = players.map((p) => p.id);
   const byId = Object.fromEntries(players.map((p) => [p.id, p]));
