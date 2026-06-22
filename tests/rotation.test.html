@@ -60,7 +60,7 @@
       assert(worst <= 1, 'N=10: platoons never play consecutive periods');
     }
 
-    log('info', '\n=== Mighty Might (8 periods, court 5) ===');
+    log('info', '\n=== Might Mite (8 periods, court 5) ===');
     for (const n of [10, 9, 8, 7, 6, 5]) {
       const { div, grid, vals, neverSit } = run('mightymight', n);
       assert(grid.every((g) => g.length === Math.min(div.court, n)), `N=${n}: every period has ${Math.min(div.court, n)} on court`);

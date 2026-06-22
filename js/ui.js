@@ -103,8 +103,11 @@ function render() {
 
 function renderHeader() {
   const team = store.getActiveTeam();
+  const div = team ? getDivision(team.division) : null;
   $('#teamName').textContent = team ? team.name : 'Add a team';
-  $('#teamDivision').textContent = team ? getDivision(team.division).name : '';
+  const divEl = $('#teamDivision');
+  divEl.textContent = div ? div.name : '';
+  divEl.className = 'badge' + (div ? ` div-${div.id}` : '');
 }
 
 function emptyTeamPrompt() {
