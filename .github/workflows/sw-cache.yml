@@ -1,0 +1,46 @@
+name: Sync service worker cache
+
+# Keeps the service worker's CACHE name in sync with the cached assets so
+# deployed CSS/JS changes actually reach returning users (the SW is
+# cache-first). This is the server-side safety net: it runs even if a commit
+# was made without the local pre-commit hook (scripts/bump-sw-cache.mjs).
+#
+# The bot's commit-back uses GITHUB_TOKEN, which does not re-trigger this
+# workflow (no loop), but does trigger the Pages build so the corrected
+# service worker is what gets deployed.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sw-cache-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Derive cache name from asset hashes
+        run: node scripts/bump-sw-cache.mjs
+
+      - name: Commit if the cache name changed
+        run: |
+          if git diff --quiet -- service-worker.js; then
+            echo "Service worker cache name already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add service-worker.js
+          git commit -m "Sync service worker cache name to asset hash"
+          git push

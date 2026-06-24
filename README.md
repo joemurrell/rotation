@@ -67,17 +67,22 @@ consecutive-period limits, the sit-one rule, availability windows, and front-loa
 
 ## Development setup
 
-The repo ships a git hook that keeps the service worker cache fresh. Enable it once
-per clone so deployed changes actually reach returning users:
+The service worker is cache-first, so its `CACHE` name has to change whenever a cached
+file changes — otherwise returning users keep getting the old assets. This is handled
+automatically:
 
-```
-git config core.hooksPath .githooks
-```
+- **Server-side (no setup):** the `Sync service worker cache` GitHub Action runs on every
+  push to `main`, sets `CACHE` to a hash of the cached assets via
+  `scripts/bump-sw-cache.mjs`, and commits the result back if it changed. The Pages build
+  then deploys the corrected service worker.
+- **Locally (optional):** enable the same check as a pre-commit hook so the name is right
+  before you even push:
 
-On each commit it runs `scripts/bump-sw-cache.mjs`, which sets the service worker's
-`CACHE` name to a hash of the cached assets — it changes automatically when any cached
-file changes, and stays put otherwise. (Requires Node.) You can also run it by hand:
-`node scripts/bump-sw-cache.mjs`.
+  ```
+  git config core.hooksPath .githooks
+  ```
+
+You can also run it by hand: `node scripts/bump-sw-cache.mjs` (requires Node).
 
 ## How it's built
 
