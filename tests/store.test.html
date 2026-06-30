@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Store tests</title>
+  <style>
+    body { font: 14px/1.5 monospace; background: #0f172a; color: #e2e8f0; padding: 16px; }
+    .pass { color: #4ade80; } .fail { color: #f87171; } .info { color: #94a3b8; }
+    h2 { color: #f97316; }
+    pre { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h2>Store tests</h2>
+  <pre id="out"></pre>
+  <script type="module">
+    const out = document.getElementById('out');
+    let passed = 0, failed = 0;
+    const log = (cls, msg) => out.insertAdjacentHTML('beforeend', `<span class="${cls}">${msg}</span>\n`);
+    function assert(cond, msg) {
+      if (cond) { passed++; log('pass', '  ✓ ' + msg); }
+      else { failed++; log('fail', '  ✗ ' + msg); }
+    }
+
+    // store.js keeps its state in a module-level singleton initialized at
+    // import time from localStorage, so each scenario needs both a clean
+    // localStorage and a fresh module instance (forced via a cache-busting
+    // query string -- the browser treats each distinct URL as its own module).
+    const KEY = 'bbrotation.v1';
+    let n = 0;
+    async function freshStore(seedValue) {
+      localStorage.clear();
+      if (seedValue !== undefined) localStorage.setItem(KEY, seedValue);
+      return import(`../js/store.js?case=${n++}`);
+    }
+
+    log('info', '=== load() fallback ===');
+    {
+      const store = await freshStore();
+      const s = store.getState();
+      assert(s.schema === 1 && s.activeTeamId === null && s.teams.length === 0, 'no localStorage entry -> blank state');
+    }
+    {
+      const store = await freshStore('not json');
+      const s = store.getState();
+      assert(Array.isArray(s.teams) && s.teams.length === 0, 'corrupt JSON in localStorage falls back to blank state');
+    }
+    {
+      const store = await freshStore(JSON.stringify({ schema: 1 })); // missing `teams`
+      const s = store.getState();
+      assert(Array.isArray(s.teams) && s.teams.length === 0, 'valid JSON with no teams array falls back to blank state');
+    }
+
+    log('info', '\n=== teams ===');
+    {
+      const store = await freshStore();
+      const t = store.addTeam('Wolves', 'peewee');
+      assert(t.name === 'Wolves' && t.division === 'peewee', 'addTeam creates a team with the given name/division');
+      assert(store.getActiveTeam()?.id === t.id, 'newly added team becomes active');
+      assert(store.getTeams().length === 1, 'team is added to the team list');
+
+      const blank = store.addTeam('   ', 'peewee');
+      assert(blank.name === 'Team', 'blank/whitespace name defaults to "Team"');
+
+      store.updateTeam(t.id, { name: 'Renamed' });
+      assert(store.getTeams().find((x) => x.id === t.id).name === 'Renamed', 'updateTeam patches fields');
+    }
+    {
+      const store = await freshStore();
+      const t1 = store.addTeam('A', 'peewee');
+      const t2 = store.addTeam('B', 'peewee');
+      assert(store.getActiveTeam().id === t2.id, 'most recently added team is active');
+      store.deleteTeam(t2.id);
+      assert(store.getActiveTeam()?.id === t1.id, 'deleting the active team falls back to the first remaining team');
+      assert(store.getTeams().length === 1, 'deleted team is removed from the list');
+      store.deleteTeam(t1.id);
+      assert(store.getActiveTeam() === null, 'deleting the last team leaves no active team');
+    }
+    {
+      const store = await freshStore();
+      const t1 = store.addTeam('A', 'peewee');
+      store.addTeam('B', 'peewee'); // becomes active
+      store.deleteTeam(t1.id); // deleting a non-active team
+      assert(store.getActiveTeam().name === 'B', 'deleting a non-active team leaves activeTeamId untouched');
+    }
+
+    log('info', '\n=== roster ===');
+    {
+      const store = await freshStore();
+      const t = store.addTeam('A', 'peewee');
+      store.addPlayer(t.id, { name: 'Alice', number: '4', positions: [1] });
+      const p = store.getTeams()[0].roster[0];
+      assert(p.name === 'Alice' && p.number === '4', 'addPlayer stores name/number');
+
+      store.addPlayer(t.id, { name: '' });
+      assert(store.getTeams()[0].roster[1].name === 'Player', 'blank player name defaults to "Player"');
+
+      store.updatePlayer(t.id, p.id, { number: '9' });
+      assert(store.getTeams()[0].roster.find((x) => x.id === p.id).number === '9', 'updatePlayer patches fields');
+
+      store.deletePlayer(t.id, p.id);
+      assert(store.getTeams()[0].roster.length === 1, 'deletePlayer removes the player');
+
+      store.addPlayer('missing-team-id', { name: 'Ghost' });
+      assert(true, 'addPlayer on an unknown team id does not throw');
+    }
+
+    log('info', '\n=== games ===');
+    {
+      const store = await freshStore();
+      const t = store.addTeam('A', 'peewee');
+      const g1 = store.addGame(t.id, { opponent: 'Hawks' });
+      assert(g1.finalized === false, 'addGame defaults finalized to false');
+      assert(g1.opponent === 'Hawks', 'addGame stores the opponent');
+      assert(/^\d{4}-\d{2}-\d{2}$/.test(g1.date), 'addGame defaults date to an ISO date string');
+
+      const g2 = store.addGame(t.id, { opponent: 'Bears' });
+      assert(store.getTeams()[0].games[0].id === g2.id, 'addGame unshifts new games to the front of the list');
+
+      store.updateGame(t.id, g1.id, { finalized: true });
+      assert(store.getTeams()[0].games.find((x) => x.id === g1.id).finalized === true, 'updateGame patches fields');
+
+      store.deleteGame(t.id, g2.id);
+      assert(store.getTeams()[0].games.length === 1, 'deleteGame removes the game');
+
+      assert(store.addGame('missing-team-id', {}) === null, 'addGame on an unknown team id returns null');
+    }
+
+    log('info', '\n=== persistence across reload ===');
+    {
+      const store1 = await freshStore();
+      const t = store1.addTeam('Persisted', 'mightymight');
+      store1.addPlayer(t.id, { name: 'Sam' });
+      // Re-import without clearing localStorage -- simulates a page reload.
+      const store2 = await import(`../js/store.js?case=${n++}`);
+      const reloaded = store2.getTeams()[0];
+      assert(reloaded.name === 'Persisted' && reloaded.roster[0].name === 'Sam', 'state survives a fresh module load (persisted to localStorage)');
+    }
+
+    log('info', '\n=== export / import ===');
+    {
+      const store = await freshStore();
+      store.addTeam('A', 'peewee');
+      const json = store.exportJSON();
+      const parsed = JSON.parse(json);
+      assert(Array.isArray(parsed.teams) && parsed.teams.length === 1, 'exportJSON serializes the current state');
+
+      const store2 = await freshStore();
+      store2.importJSON(json);
+      assert(store2.getTeams()[0].name === 'A', 'importJSON replaces in-memory state with the backup');
+      assert(JSON.parse(localStorage.getItem(KEY)).teams.length === 1, 'importJSON persists the restored state');
+
+      let threw = false;
+      try { store2.importJSON('{"foo":1}'); } catch { threw = true; }
+      assert(threw, 'importJSON rejects a payload without a teams array');
+
+      let threwOnBadJson = false;
+      try { store2.importJSON('not json at all'); } catch { threwOnBadJson = true; }
+      assert(threwOnBadJson, 'importJSON rejects unparseable JSON');
+    }
+
+    log(failed === 0 ? 'pass' : 'fail', `\n${passed} passed, ${failed} failed`);
+    window.__TESTS__ = { passed, failed };
+  </script>
+</body>
+</html>

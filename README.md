@@ -61,9 +61,20 @@ python3 -m http.server 8765
 
 ## Tests
 
-Open **`tests/rotation.test.html`** in a browser (via the local server above). It runs the
-rotation generator across both divisions and 5–10 players and asserts fairness,
-consecutive-period limits, the sit-one rule, availability windows, and front-loading.
+`tests/*.test.html` are plain ES-module pages (no framework) covering the rotation
+generator, position assignment, season stats, and the localStorage-backed store.
+Each one prints pass/fail to the page and sets `window.__TESTS__ = { passed, failed }`.
+
+Run them all headlessly:
+
+```sh
+npm install
+npm test
+```
+
+Or open any `tests/*.test.html` directly in a browser (via the local server above).
+
+CI runs `npm test` on every push and pull request (see `.github/workflows/tests.yml`).
 
 ## Development setup
 
