@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Position assignment tests</title>
+  <style>
+    body { font: 14px/1.5 monospace; background: #0f172a; color: #e2e8f0; padding: 16px; }
+    .pass { color: #4ade80; } .fail { color: #f87171; } .info { color: #94a3b8; }
+    h2 { color: #f97316; }
+    pre { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h2>Position assignment tests</h2>
+  <pre id="out"></pre>
+  <script type="module">
+    import { assignPositions, POSITIONS } from '../js/positions.js';
+
+    const out = document.getElementById('out');
+    let passed = 0, failed = 0;
+    const log = (cls, msg) => out.insertAdjacentHTML('beforeend', `<span class="${cls}">${msg}</span>\n`);
+    function assert(cond, msg) {
+      if (cond) { passed++; log('pass', '  ✓ ' + msg); }
+      else { failed++; log('fail', '  ✗ ' + msg); }
+    }
+
+    const ids = ['a', 'b', 'c', 'd', 'e'];
+    const grid5 = Array.from({ length: 6 }, () => ids.slice());
+
+    log('info', '=== Spread mode ===');
+    {
+      const { byCell, warnings } = assignPositions({ grid: grid5, mode: 'spread' });
+      assert(warnings.length === 0, 'no warnings when court exactly fits the position count');
+      for (let period = 0; period < grid5.length; period++) {
+        const used = ids.map((id) => byCell[`${period}:${id}`]);
+        assert(new Set(used).size === ids.length, `period ${period}: every player gets a distinct position`);
+        assert(used.every((p) => POSITIONS.includes(p)), `period ${period}: all positions are valid (1-5)`);
+      }
+      // Variety: with 6 periods and 5 positions, at least one player must change position at least once.
+      const changed = ids.some((id) => {
+        const seq = grid5.map((_, period) => byCell[`${period}:${id}`]);
+        return new Set(seq).size > 1;
+      });
+      assert(changed, 'spread mode rotates at least one player through more than one position');
+    }
+
+    log('info', '\n=== Fixed mode ===');
+    {
+      const groups = { a: [1, 2], b: [1, 2], c: [3], d: [4, 5], e: [4, 5] };
+      const { byCell, warnings } = assignPositions({ grid: grid5, mode: 'fixed', groups });
+      assert(warnings.length === 0, 'no warnings when fixed groups can fully cover the court');
+      for (let period = 0; period < grid5.length; period++) {
+        for (const id of ids) {
+          const pos = byCell[`${period}:${id}`];
+          assert(groups[id].includes(pos), `period ${period}: ${id} stays within its assigned group (${groups[id].join(',')}), got ${pos}`);
+        }
+      }
+      // a/b share [1,2] -- across periods they should alternate rather than one hoarding a slot.
+      const aSeq = grid5.map((_, period) => byCell[`${period}:a`]);
+      assert(new Set(aSeq).size === 2, 'player sharing a 2-position group rotates between both positions over time');
+    }
+
+    log('info', '\n=== Fixed mode: over-constrained group ===');
+    {
+      // Three players all locked to position 1 only -- at most one can be seated there per period.
+      const groups = { a: [1], b: [1], c: [1], d: [2], e: [3] };
+      const { byCell, warnings } = assignPositions({ grid: grid5, mode: 'fixed', groups });
+      assert(warnings.length === grid5.length, `one warning per period (got ${warnings.length})`);
+      for (const w of warnings) {
+        assert(w.pids.length === 2, `period ${w.period}: exactly 2 of the 3 single-slot players go unassigned`);
+      }
+      // The two unassigned players in a period should have no entry in byCell for that period.
+      const { period, pids } = warnings[0];
+      for (const pid of pids) {
+        assert(byCell[`${period}:${pid}`] === undefined, `unassigned player ${pid} in period ${period} has no byCell entry`);
+      }
+    }
+
+    log('info', '\n=== Manual locks ===');
+    {
+      const locks = { '0:a': 5 };
+      const { byCell } = assignPositions({ grid: grid5, mode: 'spread', locks });
+      assert(byCell['0:a'] === 5, 'locked player keeps the locked position');
+      const others = ids.filter((id) => id !== 'a').map((id) => byCell[`0:${id}`]);
+      assert(!others.includes(5), 'no other player gets the locked position in the same period');
+    }
+
+    log('info', '\n=== Manual locks: collision ===');
+    {
+      // a and b both locked to position 3 in period 0 -- only the first one processed wins the lock,
+      // the loser falls back into normal assignment for an open position.
+      const locks = { '0:a': 3, '0:b': 3 };
+      const { byCell } = assignPositions({ grid: grid5, mode: 'spread', locks });
+      const aPos = byCell['0:a'], bPos = byCell['0:b'];
+      assert(aPos === 3 || bPos === 3, 'one of the colliding locks is honored');
+      assert(aPos !== bPos, 'colliding locks never produce a duplicate position assignment');
+      const all = ids.map((id) => byCell[`0:${id}`]);
+      assert(new Set(all).size === ids.length, 'period 0 still ends up with 5 distinct positions despite the collision');
+    }
+
+    log(failed === 0 ? 'pass' : 'fail', `\n${passed} passed, ${failed} failed`);
+    window.__TESTS__ = { passed, failed };
+  </script>
+</body>
+</html>

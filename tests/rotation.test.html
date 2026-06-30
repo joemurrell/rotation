@@ -16,7 +16,7 @@
   <pre id="out"></pre>
   <script type="module">
     import { DIVISIONS } from '../js/rules.js';
-    import { generateRotation, availabilityFromWindow } from '../js/rotation.js';
+    import { generateRotation, validateRotation, availabilityFromWindow } from '../js/rotation.js';
 
     const out = document.getElementById('out');
     let passed = 0, failed = 0;
@@ -83,6 +83,64 @@
       const periods = grid.map((g, i) => g.includes('p0') ? i + 1 : null).filter(Boolean);
       const avg = periods.reduce((a, b) => a + b, 0) / periods.length;
       assert(avg <= 2.5, `front-loaded player skews to early periods (avg period ${avg})`);
+    }
+
+    log('info', '\n=== Seed determinism ===');
+    {
+      const div = DIVISIONS.mightymight;
+      const players = makePlayers(9, { periods: div.periods });
+      const a = generateRotation({ ...div, players, seed: 42 });
+      const b = generateRotation({ ...div, players, seed: 42 });
+      assert(JSON.stringify(a.grid) === JSON.stringify(b.grid), 'same seed + inputs produce an identical grid');
+      const c = generateRotation({ ...div, players, seed: 43 });
+      assert(JSON.stringify(a.grid) !== JSON.stringify(c.grid), 'a different seed produces a different grid');
+    }
+
+    log('info', '\n=== validateRotation (direct, hand-built grids) ===');
+    {
+      const div = DIVISIONS.peewee; // maxConsecutive: 2
+      const players = [
+        { id: 'p0', name: 'Alice', available: availabilityFromWindow(div.periods) },
+        { id: 'p1', name: 'Bob', available: availabilityFromWindow(div.periods) },
+        { id: 'p2', name: 'Cara', available: availabilityFromWindow(div.periods) },
+      ];
+      // Alice plays all 4 periods in a row -- exceeds maxConsecutive of 2.
+      const grid = [['p0', 'p1'], ['p0', 'p2'], ['p0', 'p1'], ['p0', 'p2']];
+      const warnings = validateRotation(div, players, grid);
+      assert(warnings.some((w) => w.includes('Alice') && w.includes('4 periods in a row')), 'flags a hand-edited grid that violates maxConsecutive');
+    }
+    {
+      const div = DIVISIONS.mightymight; // mustSitOnce: true, exempt at <=6
+      const periods = div.periods;
+      const players = Array.from({ length: 7 }, (_, i) => ({
+        id: 'p' + i, name: 'P' + i, available: availabilityFromWindow(periods),
+      }));
+      // p0 is on court every single period despite being available the whole game.
+      const grid = Array.from({ length: periods }, () => ['p0', 'p1', 'p2', 'p3', 'p4']);
+      const warnings = validateRotation(div, players, grid);
+      assert(warnings.some((w) => w.includes('P0') && w.includes('never sits')), 'flags a player who never sits when the sit-one rule applies (N above the exemption threshold)');
+    }
+    {
+      const div = DIVISIONS.mightymight;
+      const periods = div.periods;
+      // Only 5 players present -- at/under the exemption threshold, so nobody is required to sit.
+      const players = Array.from({ length: 5 }, (_, i) => ({
+        id: 'p' + i, name: 'P' + i, available: availabilityFromWindow(periods),
+      }));
+      const grid = Array.from({ length: periods }, () => ['p0', 'p1', 'p2', 'p3', 'p4']);
+      const warnings = validateRotation(div, players, grid);
+      assert(!warnings.some((w) => w.includes('never sits')), 'no never-sits warning when N is at/below the exemption threshold');
+    }
+    {
+      const div = DIVISIONS.mightymight;
+      const players = [
+        { id: 'p0', name: 'P0', available: availabilityFromWindow(div.periods) },
+        { id: 'p1', name: 'P1', available: availabilityFromWindow(div.periods) },
+      ];
+      // p0 plays every period, p1 plays none -- a 8-period spread among full-game players.
+      const grid = Array.from({ length: div.periods }, () => ['p0']);
+      const warnings = validateRotation(div, players, grid);
+      assert(warnings.some((w) => w.includes('Playing time varies')), 'flags an uneven playing-time spread among full-game players');
     }
 
     log(failed === 0 ? 'pass' : 'fail', `\n${passed} passed, ${failed} failed`);

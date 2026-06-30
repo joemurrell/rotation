@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Season stats tests</title>
+  <style>
+    body { font: 14px/1.5 monospace; background: #0f172a; color: #e2e8f0; padding: 16px; }
+    .pass { color: #4ade80; } .fail { color: #f87171; } .info { color: #94a3b8; }
+    h2 { color: #f97316; }
+    pre { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h2>Season stats tests</h2>
+  <pre id="out"></pre>
+  <script type="module">
+    import { seasonStats, finalizedGameCount } from '../js/stats.js';
+
+    const out = document.getElementById('out');
+    let passed = 0, failed = 0;
+    const log = (cls, msg) => out.insertAdjacentHTML('beforeend', `<span class="${cls}">${msg}</span>\n`);
+    function assert(cond, msg) {
+      if (cond) { passed++; log('pass', '  ✓ ' + msg); }
+      else { failed++; log('fail', '  ✗ ' + msg); }
+    }
+
+    // Pee Wee: 4 periods, 6 minutes/period (see js/rules.js).
+    const team = {
+      division: 'peewee',
+      roster: [
+        { id: 'p1', name: 'Alice', number: '1' },
+        { id: 'p2', name: 'Bob', number: '2' },
+      ],
+      games: [
+        {
+          finalized: true,
+          grid: [['p1'], ['p1', 'p2'], ['p2'], ['p1']],
+          positions: { '0:p1': 1, '1:p1': 2, '1:p2': 3, '2:p2': 3, '3:p1': 1 },
+        },
+        { finalized: false, grid: [['p1'], ['p1'], ['p1'], ['p1']] }, // not finalized -> ignored
+        { finalized: true, grid: [] }, // finalized but no grid -> ignored by seasonStats
+        { finalized: true, grid: [['p1', 'p3'], ['p3'], [], []] }, // p3 no longer on roster
+      ],
+    };
+
+    log('info', '=== finalizedGameCount ===');
+    {
+      assert(finalizedGameCount(team) === 3, `counts all finalized games regardless of grid contents (got ${finalizedGameCount(team)})`);
+    }
+
+    log('info', '\n=== seasonStats: filtering ===');
+    const stats = seasonStats(team);
+    const byId = Object.fromEntries(stats.map((s) => [s.id, s]));
+    {
+      assert(stats.length === 2, `only rostered players are returned (got ${stats.length})`);
+      assert(!('p3' in byId), 'player removed from roster after a game is silently skipped, not crashed on');
+    }
+
+    log('info', '\n=== seasonStats: accumulation ===');
+    {
+      assert(byId.p1.periods === 4, `p1 periods accumulate across finalized games with a grid (got ${byId.p1.periods})`);
+      assert(byId.p1.minutes === 24, `p1 minutes = periods * minutesPerPeriod (got ${byId.p1.minutes})`);
+      assert(byId.p1.games === 2, `p1 games counts each game once even with multiple periods played (got ${byId.p1.games})`);
+      assert(byId.p2.periods === 2, `p2 periods only from the game p2 appears in (got ${byId.p2.periods})`);
+      assert(byId.p2.minutes === 12, `p2 minutes (got ${byId.p2.minutes})`);
+      assert(byId.p2.games === 1, `p2 games (got ${byId.p2.games})`);
+    }
+
+    log('info', '\n=== seasonStats: byPosition ===');
+    {
+      assert(byId.p1.byPosition[1] === 12, `p1 accumulates minutes for position 1 across periods (got ${byId.p1.byPosition[1]})`);
+      assert(byId.p1.byPosition[2] === 6, `p1 accumulates minutes for position 2 (got ${byId.p1.byPosition[2]})`);
+      assert(byId.p2.byPosition[3] === 12, `p2 accumulates minutes for position 3 (got ${byId.p2.byPosition[3]})`);
+      assert(!(4 in byId.p1.byPosition), 'positions never played are absent, not zero');
+    }
+
+    log('info', '\n=== seasonStats: sort order ===');
+    {
+      assert(stats[0].id === 'p1' && stats[1].id === 'p2', 'sorted by minutes descending');
+    }
+
+    log('info', '\n=== seasonStats: empty roster/games ===');
+    {
+      const empty = seasonStats({ division: 'peewee', roster: [], games: [] });
+      assert(Array.isArray(empty) && empty.length === 0, 'empty team produces an empty stats array');
+    }
+
+    log(failed === 0 ? 'pass' : 'fail', `\n${passed} passed, ${failed} failed`);
+    window.__TESTS__ = { passed, failed };
+  </script>
+</body>
+</html>
