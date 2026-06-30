@@ -518,21 +518,28 @@ function regenerate(team, g) {
 function gridView(team, g, div, frozen = false) {
   const present = byName(team.roster.filter((p) => g.presentIds.includes(p.id)));
   const periods = div.periods;
+  // In a positions mode (spread/fixed) each on-court cell carries a 1-5 number,
+  // so column sorts go by that number instead of just on/off.
+  const positionsActive = (g.positionMode || 'off') !== 'off';
 
   const rows = present.map((p) => {
     const on = [];
+    const pos = [];
     let total = 0;
     for (let period = 0; period < periods; period++) {
       const isOn = !!g.grid[period]?.includes(p.id);
       on.push(isOn);
+      pos.push(g.positions?.[`${period}:${p.id}`] ?? null);
       if (isOn) total++;
     }
-    return { p, on, total };
+    return { p, on, pos, total };
   });
 
   const setSort = (key) => {
     if (gridSort.key === key) gridSort.dir = gridSort.dir === 'asc' ? 'desc' : 'asc';
-    else gridSort = { key, dir: key === 'name' ? 'asc' : 'desc' };
+    // Sorting a period column by position number reads best low→high (1→5),
+    // so default those (and the name column) to ascending; on/off stays desc.
+    else gridSort = { key, dir: (key === 'name' || (positionsActive && typeof key === 'number')) ? 'asc' : 'desc' };
     render();
   };
   const arrow = (key) => gridSort.key === key
@@ -544,7 +551,12 @@ function gridView(team, g, div, frozen = false) {
     let cmp;
     if (gridSort.key === 'name') cmp = a.p.name.localeCompare(b.p.name);
     else if (gridSort.key === 'total') cmp = a.total - b.total;
-    else cmp = Number(a.on[gridSort.key]) - Number(b.on[gridSort.key]);
+    else if (positionsActive) {
+      // Sort by the 1-5 position number for this period; unassigned/bench last (asc).
+      // 99 is a finite sentinel so two bench players compare equal (0) and fall
+      // through to the name tie-break rather than producing NaN.
+      cmp = (a.pos[gridSort.key] ?? 99) - (b.pos[gridSort.key] ?? 99);
+    } else cmp = Number(a.on[gridSort.key]) - Number(b.on[gridSort.key]);
     if (cmp === 0) cmp = a.p.name.localeCompare(b.p.name);
     return cmp * mul;
   });
