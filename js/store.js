@@ -107,6 +107,34 @@ export function deleteGame(teamId, gameId) {
   save();
 }
 
+// --- mid-game roster changes (late arrivals, early leaves, corrections) ---
+export function addPlayerToGame(teamId, gameId, playerId) {
+  const g = findGame(teamId, gameId);
+  if (!g) return;
+  if (!g.presentIds.includes(playerId)) g.presentIds.push(playerId);
+  save();
+}
+export function removePlayerFromGame(teamId, gameId, playerId) {
+  const g = findGame(teamId, gameId);
+  if (!g) return;
+  g.presentIds = g.presentIds.filter((id) => id !== playerId);
+  g.grid = g.grid.map((period) => period.filter((id) => id !== playerId));
+  delete g.windows[playerId];
+  g.frontLoad = (g.frontLoad || []).filter((id) => id !== playerId);
+  delete g.positionGroups[playerId];
+  for (const key of Object.keys(g.positionLocks)) {
+    if (key.endsWith(`:${playerId}`)) delete g.positionLocks[key];
+  }
+  for (const key of Object.keys(g.positions)) {
+    if (key.endsWith(`:${playerId}`)) delete g.positions[key];
+  }
+  save();
+}
+function findGame(teamId, gameId) {
+  const t = state.teams.find((x) => x.id === teamId);
+  return t?.games.find((x) => x.id === gameId);
+}
+
 // --- backup ---
 export function exportJSON() { return JSON.stringify(state, null, 2); }
 export function importJSON(text) {

@@ -414,6 +414,7 @@ function screenRotation(team, g) {
   const frozen = !!g.finalized;
   const controls = [];
   if (!frozen) {
+    controls.push(el('button', { class: 'btn sm', text: '👥 Players', onclick: () => managePlayersSheet(team, g, div) }));
     controls.push(el('button', { class: 'btn sm', text: '🔀 Regenerate', onclick: () => confirmAction({
       title: 'Regenerate rotation?',
       message: 'This replaces the current grid and any manual subs or pinned positions.',
@@ -432,6 +433,71 @@ function screenRotation(team, g) {
   if (!liveOn && !frozen) wrap.appendChild(positionControls(team, g, div));
   wrap.appendChild(liveOn ? liveView(team, g, div) : gridView(team, g, div, frozen));
   return wrap;
+}
+
+// ---- manage players mid-game (late arrivals, early leaves, corrections) ----
+function managePlayersSheet(team, g, div) {
+  const frontLoadSet = new Set(g.frontLoad || []);
+  const expanded = new Set();
+
+  openSheet('Manage players', (sheet) => {
+    const listWrap = el('div');
+    const build = () => {
+      listWrap.innerHTML = '';
+      const present = byName(team.roster.filter((p) => g.presentIds.includes(p.id)));
+      const absent = byName(team.roster.filter((p) => !g.presentIds.includes(p.id)));
+
+      listWrap.appendChild(el('h4', { text: 'In this game', style: 'margin:6px 0' }));
+      if (!present.length) listWrap.appendChild(el('p', { class: 'muted', text: 'No players yet.' }));
+      for (const p of present) {
+        const row = el('div', {});
+        const w = g.windows[p.id];
+        const flags = [];
+        if (frontLoadSet.has(p.id)) flags.push('front-load');
+        if (w && (w.from > 1 || w.to < div.periods)) flags.push(`periods ${w.from}–${w.to}`);
+        row.appendChild(el('div', { class: 'row between', style: 'padding:6px 0' }, [
+          el('div', { class: 'grow' }, [
+            el('span', { text: p.number ? `${p.name} #${p.number}` : p.name }),
+            flags.length ? el('div', { class: 'pill-flag', text: flags.join(' · ') }) : null,
+          ]),
+          el('div', { class: 'row', style: 'gap:6px' }, [
+            el('button', { class: 'btn sm ghost', text: '⚙', onclick: () => {
+              expanded.has(p.id) ? expanded.delete(p.id) : expanded.add(p.id);
+              build();
+            } }),
+            el('button', { class: 'btn sm danger', text: 'Remove', onclick: () => confirmAction({
+              title: `Remove ${p.name} from this game?`,
+              message: 'This clears their court assignments for this game (use this if they left early or were added by mistake).',
+              onConfirm: () => { store.removePlayerFromGame(team.id, g.id, p.id); render(); },
+            }) }),
+          ]),
+        ]));
+        if (expanded.has(p.id)) {
+          row.appendChild(playerAdjust({ windows: g.windows, frontLoad: frontLoadSet }, p, div, () => {
+            store.updateGame(team.id, g.id, { windows: g.windows, frontLoad: [...frontLoadSet] });
+            build();
+          }));
+        }
+        listWrap.appendChild(row);
+      }
+
+      listWrap.appendChild(el('h4', { text: 'Add a player (e.g. late arrival)', style: 'margin:16px 0 6px' }));
+      if (!absent.length) listWrap.appendChild(el('p', { class: 'muted', text: 'Everyone on the roster is already in this game.' }));
+      for (const p of absent) {
+        listWrap.appendChild(el('div', { class: 'row between', style: 'padding:6px 0' }, [
+          el('span', { text: p.number ? `${p.name} #${p.number}` : p.name }),
+          el('button', { class: 'btn sm success', text: '+ Add', onclick: () => {
+            store.addPlayerToGame(team.id, g.id, p.id);
+            render();
+            build();
+            toast(`${p.name} added — sub them onto the court from the grid or Live view.`);
+          } }),
+        ]));
+      }
+    };
+    build();
+    sheet.appendChild(listWrap);
+  });
 }
 
 // ---- positions ----
