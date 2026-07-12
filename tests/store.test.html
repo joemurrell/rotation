@@ -127,6 +127,47 @@
       assert(store.addGame('missing-team-id', {}) === null, 'addGame on an unknown team id returns null');
     }
 
+    log('info', '\n=== mid-game roster changes ===');
+    {
+      const store = await freshStore();
+      const t = store.addTeam('A', 'peewee');
+      store.addPlayer(t.id, { name: 'Alice' });
+      store.addPlayer(t.id, { name: 'Bob' });
+      const [alice, bob] = store.getTeams()[0].roster;
+      const g = store.addGame(t.id, { presentIds: [alice.id] });
+
+      store.addPlayerToGame(t.id, g.id, bob.id);
+      let stored = store.getTeams()[0].games.find((x) => x.id === g.id);
+      assert(stored.presentIds.includes(bob.id), 'addPlayerToGame adds a late arrival to presentIds');
+
+      store.addPlayerToGame(t.id, g.id, bob.id);
+      stored = store.getTeams()[0].games.find((x) => x.id === g.id);
+      assert(stored.presentIds.filter((id) => id === bob.id).length === 1, 'addPlayerToGame is idempotent');
+
+      store.updateGame(t.id, g.id, {
+        grid: [[alice.id, bob.id], [alice.id, bob.id]],
+        windows: { [bob.id]: { from: 2, to: 4 } },
+        frontLoad: [bob.id],
+        positionGroups: { [bob.id]: [1, 2] },
+        positionLocks: { [`0:${bob.id}`]: 3 },
+        positions: { [`0:${bob.id}`]: 3 },
+      });
+      store.removePlayerFromGame(t.id, g.id, bob.id);
+      stored = store.getTeams()[0].games.find((x) => x.id === g.id);
+      assert(!stored.presentIds.includes(bob.id), 'removePlayerFromGame drops the player from presentIds');
+      assert(stored.grid.every((period) => !period.includes(bob.id)), 'removePlayerFromGame clears them from every period of the grid');
+      assert(!(bob.id in stored.windows), 'removePlayerFromGame clears their availability window');
+      assert(!stored.frontLoad.includes(bob.id), 'removePlayerFromGame clears their front-load flag');
+      assert(!(bob.id in stored.positionGroups), 'removePlayerFromGame clears their fixed position group');
+      assert(Object.keys(stored.positionLocks).length === 0, 'removePlayerFromGame clears their pinned positions');
+      assert(Object.keys(stored.positions).length === 0, 'removePlayerFromGame clears their computed positions');
+      assert(stored.presentIds.includes(alice.id), 'removePlayerFromGame leaves other players untouched');
+
+      store.addPlayerToGame('missing-team-id', g.id, alice.id);
+      store.removePlayerFromGame('missing-team-id', g.id, alice.id);
+      assert(true, 'addPlayerToGame/removePlayerFromGame on an unknown team id do not throw');
+    }
+
     log('info', '\n=== persistence across reload ===');
     {
       const store1 = await freshStore();
