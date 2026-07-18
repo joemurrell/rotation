@@ -48,7 +48,9 @@ export function generateRotation(cfg) {
 
   // Special case: exactly `platoonAt` players -> two fixed platoons of `court`,
   // alternating every period (each plays half the periods, never consecutive).
-  if (cfg.platoonAt && N === cfg.platoonAt && N === court * 2) {
+  // Only applies when everyone is available the whole game — the platoons are
+  // rigid and can't route around an availability window or front-load flag.
+  if (cfg.platoonAt && N === cfg.platoonAt && N === court * 2 && players.every((p) => p.available.every(Boolean))) {
     return platoonRotation(players, periods, court, rng);
   }
 
@@ -186,6 +188,18 @@ function collectWarnings({ grid, players, periods, court, maxConsecutive, cfg, p
       if (plays >= periods && avail >= periods) {
         warnings.push(`${pl.name} never sits — couldn't satisfy the sit-one rule.`);
       }
+    }
+  }
+
+  // availability violations — on court during a period they're marked unavailable for
+  // (can happen from a hand-edited grid, or a rotation generated before the window was set)
+  for (const pl of players) {
+    const badPeriods = [];
+    for (let p = 0; p < periods; p++) {
+      if (grid[p].includes(pl.id) && pl.available[p] === false) badPeriods.push(p + 1);
+    }
+    if (badPeriods.length) {
+      warnings.push(`${pl.name} is on court for period${badPeriods.length > 1 ? 's' : ''} ${badPeriods.join(', ')} despite being marked unavailable then.`);
     }
   }
 
