@@ -62,6 +62,7 @@ let livePeriod = 0;          // for live mode
 let gameForm = null;         // transient new-game form state
 
 export function mount() {
+  store.setSaveErrorHandler(() => toast('Couldn’t save — storage full or unavailable. Your last change may be lost.'));
   document.querySelectorAll('#tabbar .tab').forEach((btn) => {
     btn.addEventListener('click', () => go({ tab: btn.dataset.tab, screen: 'list', gameId: null }));
   });
@@ -70,7 +71,11 @@ export function mount() {
 }
 
 function go(next) {
-  if (next.gameId !== undefined && next.gameId !== view.gameId) gridSort = { key: 'name', dir: 'asc' };
+  if (next.gameId !== undefined && next.gameId !== view.gameId) {
+    gridSort = { key: 'name', dir: 'asc' };
+    liveOn = false;
+    livePeriod = 0;
+  }
   view = { ...view, ...next };
   closeSheet();
   render();
@@ -136,12 +141,7 @@ function screenTeams() {
           : el('button', { class: 'btn sm', text: 'Use', onclick: () => { store.setActiveTeam(t.id); go({ tab: 'games', screen: 'list' }); } }),
       ]),
       el('div', { class: 'row', style: 'margin-top:10px;gap:8px' }, [
-        el('button', { class: 'btn sm ghost', text: 'Rename', onclick: () => renameTeam(t) }),
-        el('button', { class: 'btn sm danger', text: 'Delete', onclick: () => confirmAction({
-          title: `Delete team “${t.name}”?`,
-          message: 'This deletes the team, its roster, and all of its games. This can’t be undone.',
-          onConfirm: () => { store.deleteTeam(t.id); render(); },
-        }) }),
+        el('button', { class: 'btn sm ghost', text: 'Edit', onclick: () => editTeamSheet(t) }),
       ]),
     ]));
   }
@@ -164,9 +164,25 @@ function screenTeams() {
   return wrap;
 }
 
-function renameTeam(t) {
-  const v = prompt('Team name', t.name);
-  if (v && v.trim()) { store.updateTeam(t.id, { name: v.trim() }); render(); }
+function editTeamSheet(t) {
+  let name = t.name;
+  openSheet('Edit team', (sheet, close) => {
+    const nameInput = el('input', { type: 'text', value: name, placeholder: 'Team name', oninput: (e) => (name = e.target.value) });
+    sheet.append(
+      el('label', { class: 'field' }, [el('span', { text: 'Name' }), nameInput]),
+      el('button', { class: 'btn primary block', text: 'Save', onclick: () => {
+        if (!name.trim()) return toast('Enter a team name');
+        store.updateTeam(t.id, { name: name.trim() });
+        close(); render();
+      } }),
+      el('div', { class: 'spacer' }),
+      el('button', { class: 'btn block danger', text: 'Delete team', onclick: () => confirmAction({
+        title: `Delete team “${t.name}”?`,
+        message: 'This deletes the team, its roster, and all of its games. This can’t be undone.',
+        onConfirm: () => { store.deleteTeam(t.id); render(); },
+      }) }),
+    );
+  });
 }
 
 // ================= ROSTER =================
@@ -424,8 +440,18 @@ function screenRotation(team, g) {
   }
   controls.push(el('button', { class: 'btn sm' + (liveOn ? ' primary' : ''), text: liveOn ? '📋 Grid' : '▶ Live', onclick: () => { liveOn = !liveOn; render(); } }));
   controls.push(frozen
-    ? el('button', { class: 'btn sm', text: '🔓 Unfinalize', onclick: () => { store.updateGame(team.id, g.id, { finalized: false }); render(); toast('Unlocked — removed from season totals'); } })
-    : el('button', { class: 'btn sm success', text: '✓ Mark final', onclick: () => { store.updateGame(team.id, g.id, { finalized: true }); render(); toast('Locked — added to season totals'); } }));
+    ? el('button', { class: 'btn sm', text: '🔓 Unfinalize', onclick: () => confirmAction({
+        title: 'Unfinalize this game?',
+        message: 'This removes it from season totals until you mark it final again.',
+        confirmLabel: 'Unfinalize', danger: false,
+        onConfirm: () => { store.updateGame(team.id, g.id, { finalized: false }); render(); toast('Unlocked — removed from season totals'); },
+      }) })
+    : el('button', { class: 'btn sm success', text: '✓ Mark final', onclick: () => confirmAction({
+        title: 'Mark this game final?',
+        message: 'This locks the rotation and adds it to season totals.',
+        confirmLabel: 'Mark final', danger: false,
+        onConfirm: () => { store.updateGame(team.id, g.id, { finalized: true }); render(); toast('Locked — added to season totals'); },
+      }) }));
   wrap.appendChild(el('div', { class: 'row', style: 'gap:8px;margin:10px 0' }, controls));
 
   if (frozen) wrap.appendChild(el('div', { class: 'locked-note', text: '🔒 Final — unfinalize to edit subs or positions.' }));
@@ -680,6 +706,7 @@ function cellSheet(team, g, div, period, player) {
         delete g.positionLocks[key];
         store.updateGame(team.id, g.id, { grid: g.grid, positionLocks: g.positionLocks });
         close(); render();
+        toast(`${player.name} to bench`);
       } }));
       sheet.appendChild(el('h3', { text: 'Pin a position this period' }));
       const cur = g.positionLocks?.[key];
@@ -692,11 +719,33 @@ function cellSheet(team, g, div, period, player) {
       )));
       if (cur != null) sheet.appendChild(el('p', { class: 'muted', style: 'font-size:13px', text: 'Pinned spots override auto-assignment.' }));
     } else {
-      sheet.appendChild(el('p', { class: 'muted', text: (g.grid[period]?.length || 0) >= div.court ? `${div.court} already on court — adding makes ${(g.grid[period]?.length || 0) + 1}.` : '' }));
-      sheet.appendChild(el('button', { class: 'btn block success', text: '⬆ Put on court', onclick: () => {
+      const onCourtCount = g.grid[period]?.length || 0;
+      const atCapacity = onCourtCount >= div.court;
+      const w = g.windows?.[player.id];
+      const avail = w ? availabilityFromWindow(div.periods, w.from, w.to) : null;
+      const unavailable = avail ? !avail[period] : false;
+
+      const warnParts = [];
+      if (atCapacity) warnParts.push(`${div.court} already on court — adding makes ${onCourtCount + 1}.`);
+      if (unavailable) warnParts.push(`${player.name} is marked unavailable for this period.`);
+      if (warnParts.length) sheet.appendChild(el('p', { class: 'muted', text: warnParts.join(' ') }));
+
+      const putOn = () => {
         g.grid[period] = [...(g.grid[period] || []), player.id];
         store.updateGame(team.id, g.id, { grid: g.grid });
         close(); render();
+        toast(`${player.name} on court`);
+      };
+
+      sheet.appendChild(el('button', { class: 'btn block success', text: '⬆ Put on court', onclick: () => {
+        if (atCapacity || unavailable) {
+          confirmAction({
+            title: 'Put on court anyway?',
+            message: warnParts.join(' '),
+            confirmLabel: 'Put on court', danger: false,
+            onConfirm: putOn,
+          });
+        } else putOn();
       } }));
     }
   });
@@ -807,6 +856,7 @@ function importFile(file) {
       catch (e) { toast('Import failed: ' + e.message); }
     },
   });
+  reader.onerror = () => toast('Couldn’t read that file.');
   reader.readAsText(file);
 }
 

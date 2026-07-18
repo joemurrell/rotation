@@ -2,7 +2,7 @@
 // CACHE is auto-derived from the cached assets by scripts/bump-sw-cache.mjs
 // (run server-side by the Sync service worker cache workflow, and optionally
 // by the local pre-commit hook) — no need to bump it by hand.
-const CACHE = 'bbrotation-376e738a';
+const CACHE = 'bbrotation-323b11b0';
 const ASSETS = [
   './',
   './index.html',
@@ -19,7 +19,16 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // Cache each asset individually (not caches.addAll, which aborts the whole
+  // install if a single request fails) so one flaky fetch — e.g. patchy gym
+  // wifi on first load — doesn't leave the app with no offline cache at all.
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => Promise.all(ASSETS.map((url) => c.add(url).catch((err) => {
+        console.warn('service-worker: failed to cache', url, err);
+      }))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (e) => {

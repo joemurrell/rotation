@@ -23,8 +23,17 @@ function load() {
   }
 }
 
+let onSaveError = null;
+// Lets the UI surface a message when persistence fails (quota exceeded,
+// private-browsing restrictions, etc.) instead of failing silently.
+export function setSaveErrorHandler(fn) { onSaveError = fn; }
+
 function save() {
-  localStorage.setItem(KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(state));
+  } catch (err) {
+    if (onSaveError) onSaveError(err);
+  }
 }
 
 // --- teams ---
@@ -140,7 +149,55 @@ export function exportJSON() { return JSON.stringify(state, null, 2); }
 export function importJSON(text) {
   const data = JSON.parse(text);
   if (!data || !Array.isArray(data.teams)) throw new Error('Not a valid backup file.');
-  state = data;
-  if (!state.schema) state.schema = SCHEMA;
+  state = sanitizeState(data);
   save();
+}
+
+// Normalizes a parsed backup into the shape the rest of the app assumes, so a
+// hand-edited or partially-corrupt file can't crash downstream code that
+// expects e.g. g.grid or g.windows to be a particular type.
+function sanitizeState(data) {
+  const teams = data.teams.map(sanitizeTeam).filter(Boolean);
+  const activeTeamId = teams.some((t) => t.id === data.activeTeamId) ? data.activeTeamId : (teams[0]?.id || null);
+  return { schema: SCHEMA, activeTeamId, teams };
+}
+
+function sanitizeTeam(t) {
+  if (!t || typeof t !== 'object' || typeof t.id !== 'string') return null;
+  return {
+    id: t.id,
+    name: typeof t.name === 'string' && t.name.trim() ? t.name : 'Team',
+    division: typeof t.division === 'string' ? t.division : 'peewee',
+    roster: Array.isArray(t.roster) ? t.roster.map(sanitizePlayer).filter(Boolean) : [],
+    games: Array.isArray(t.games) ? t.games.map(sanitizeGame).filter(Boolean) : [],
+  };
+}
+
+function sanitizePlayer(p) {
+  if (!p || typeof p !== 'object' || typeof p.id !== 'string') return null;
+  return {
+    id: p.id,
+    name: typeof p.name === 'string' && p.name.trim() ? p.name : 'Player',
+    number: typeof p.number === 'string' || typeof p.number === 'number' ? String(p.number) : '',
+    positions: Array.isArray(p.positions) ? p.positions.filter((x) => typeof x === 'string') : [],
+  };
+}
+
+function sanitizeGame(g) {
+  if (!g || typeof g !== 'object' || typeof g.id !== 'string') return null;
+  return {
+    id: g.id,
+    date: typeof g.date === 'string' && g.date ? g.date : new Date().toISOString().slice(0, 10),
+    opponent: typeof g.opponent === 'string' ? g.opponent : '',
+    presentIds: Array.isArray(g.presentIds) ? g.presentIds.filter((id) => typeof id === 'string') : [],
+    windows: (g.windows && typeof g.windows === 'object') ? g.windows : {},
+    frontLoad: Array.isArray(g.frontLoad) ? g.frontLoad.filter((id) => typeof id === 'string') : [],
+    grid: Array.isArray(g.grid) ? g.grid.map((period) => (Array.isArray(period) ? period.filter((id) => typeof id === 'string') : [])) : [],
+    positions: (g.positions && typeof g.positions === 'object') ? g.positions : {},
+    positionMode: ['off', 'spread', 'fixed'].includes(g.positionMode) ? g.positionMode : 'off',
+    positionGroups: (g.positionGroups && typeof g.positionGroups === 'object') ? g.positionGroups : {},
+    positionLocks: (g.positionLocks && typeof g.positionLocks === 'object') ? g.positionLocks : {},
+    seed: typeof g.seed === 'number' ? g.seed : 1,
+    finalized: !!g.finalized,
+  };
 }
