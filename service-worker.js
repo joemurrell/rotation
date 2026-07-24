@@ -2,13 +2,16 @@
 // CACHE is auto-derived from the cached assets by scripts/bump-sw-cache.mjs
 // (run server-side by the Sync service worker cache workflow, and optionally
 // by the local pre-commit hook) — no need to bump it by hand.
-const CACHE = 'bbrotation-323b11b0';
+const CACHE = 'bbrotation-e5016407';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './manifest.webmanifest',
   './icons/icon.svg',
+  './icons/apple-touch-icon.png',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
   './js/app.js',
   './js/ui.js',
   './js/store.js',
