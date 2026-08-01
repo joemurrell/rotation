@@ -16,7 +16,7 @@
   <pre id="out"></pre>
   <script type="module">
     import { DIVISIONS } from '../js/rules.js';
-    import { generateRotation, validateRotation, availabilityFromWindow } from '../js/rotation.js';
+    import { generateRotation, reallocateFromPeriod, validateRotation, availabilityFromWindow } from '../js/rotation.js';
 
     const out = document.getElementById('out');
     let passed = 0, failed = 0;
@@ -141,6 +141,62 @@
       const grid = Array.from({ length: div.periods }, () => ['p0']);
       const warnings = validateRotation(div, players, grid);
       assert(warnings.some((w) => w.includes('Playing time varies')), 'flags an uneven playing-time spread among full-game players');
+    }
+
+    log('info', '\n=== reallocateFromPeriod (late arrival mid-game) ===');
+    {
+      const div = DIVISIONS.mightymight; // 8 periods, court 5, mustSitOnce true
+      const periods = div.periods;
+      const original = Array.from({ length: 8 }, (_, i) => ({
+        id: 'p' + i, name: 'P' + i, available: availabilityFromWindow(periods),
+      }));
+      const before = generateRotation({ ...div, players: original, seed: 11 });
+
+      // A 9th player shows up at the start of period 5 (index 4) -- periods 0-3 already happened.
+      const startPeriod = 4;
+      const late = { id: 'p8', name: 'P8', available: availabilityFromWindow(periods, startPeriod + 1, periods) };
+      const allPlayers = [...original, late];
+      const after = reallocateFromPeriod({ ...div, players: allPlayers, seed: 12, startPeriod, existingGrid: before.grid });
+
+      assert(JSON.stringify(after.grid.slice(0, startPeriod)) === JSON.stringify(before.grid.slice(0, startPeriod)),
+        'periods already played are preserved exactly');
+      const lateBefore = after.grid.slice(0, startPeriod).some((p) => p.includes('p8'));
+      assert(!lateBefore, 'late arrival never appears in a period before they joined');
+      const lateAfter = after.grid.slice(startPeriod).filter((p) => p.includes('p8')).length;
+      assert(lateAfter > 0, `late arrival gets folded into the remaining periods (played ${lateAfter})`);
+      assert(after.grid.every((p) => p.length === 5), 'every period (past and reallocated) still has 5 on court');
+      assert(!after.warnings.some((w) => w.includes('P8') && w.includes('unavailable')),
+        'no warning about the late arrival being on court while marked unavailable');
+
+      // Fairness: among the 8 original players, playing time (prefix + reallocated tail) stays tight.
+      const vals = original.map((p) => after.counts[p.id] || 0);
+      const spread = Math.max(...vals) - Math.min(...vals);
+      assert(spread <= 2, `original players' total playing time stays reasonably balanced after reallocation (spread ${spread})`);
+    }
+    {
+      // Arriving before tip-off (startPeriod 0) behaves like a full regenerate that includes them from period 1.
+      const div = DIVISIONS.peewee;
+      const periods = div.periods;
+      const original = Array.from({ length: 6 }, (_, i) => ({
+        id: 'p' + i, name: 'P' + i, available: availabilityFromWindow(periods),
+      }));
+      const before = generateRotation({ ...div, players: original, seed: 5 });
+      const late = { id: 'p6', name: 'P6', available: availabilityFromWindow(periods) };
+      const after = reallocateFromPeriod({ ...div, players: [...original, late], seed: 6, startPeriod: 0, existingGrid: before.grid });
+      assert(after.grid.every((p) => p.length === 5), 'startPeriod 0 still fills the court every period');
+      assert((after.counts['p6'] || 0) > 0, 'a player joining at period 0 plays in the rotation');
+    }
+    {
+      // A late arrival added after the final period changes nothing (nowhere left to fold them in).
+      const div = DIVISIONS.peewee;
+      const periods = div.periods;
+      const original = Array.from({ length: 6 }, (_, i) => ({
+        id: 'p' + i, name: 'P' + i, available: availabilityFromWindow(periods),
+      }));
+      const before = generateRotation({ ...div, players: original, seed: 9 });
+      const late = { id: 'p6', name: 'P6', available: [false, false, false, false] };
+      const after = reallocateFromPeriod({ ...div, players: [...original, late], seed: 10, startPeriod: periods, existingGrid: before.grid });
+      assert(JSON.stringify(after.grid) === JSON.stringify(before.grid), 'reallocating past the last period leaves the grid untouched');
     }
 
     log(failed === 0 ? 'pass' : 'fail', `\n${passed} passed, ${failed} failed`);
