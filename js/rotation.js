@@ -58,9 +58,29 @@ export function generateRotation(cfg) {
   const byId = Object.fromEntries(players.map((p) => [p.id, p]));
   const played = Object.fromEntries(ids.map((id) => [id, 0]));
   const streak = Object.fromEntries(ids.map((id) => [id, 0])); // current consecutive run
-  const grid = [];
 
-  for (let period = 0; period < periods; period++) {
+  const grid = runPeriods({ ids, byId, periods, court, maxConsecutive, rng, played, streak, fromPeriod: 0 });
+
+  // --- repair: enforce "must sit once" when required ---
+  const exempt = N <= cfg.mustSitExemptAtOrBelow;
+  if (cfg.mustSitOnce && !exempt && N > court) {
+    enforceSitOnce(grid, players, periods, court);
+    // recompute played after repair
+    for (const id of ids) played[id] = 0;
+    for (const p of grid) for (const id of p) played[id]++;
+  }
+
+  const warnings = collectWarnings({ grid, players, periods, court, maxConsecutive, cfg, played });
+  return { grid, counts: played, warnings };
+}
+
+// Fill periods [fromPeriod, periods) with picks, given `played`/`streak` state
+// already seeded for every id (zeros for a fresh generate, or counts carried
+// forward from a preserved prefix when reallocating mid-game). Mutates
+// `played`/`streak` in place and returns the array of picks for that range.
+function runPeriods({ ids, byId, periods, court, maxConsecutive, rng, played, streak, fromPeriod }) {
+  const grid = [];
+  for (let period = fromPeriod; period < periods; period++) {
     const availableIds = ids.filter((id) => byId[id].available[period]);
     const capacity = Math.min(court, availableIds.length);
 
@@ -107,18 +127,53 @@ export function generateRotation(cfg) {
       return played[id] - bonus;
     }
   }
+  return grid;
+}
 
-  // --- repair: enforce "must sit once" when required ---
-  const exempt = N <= cfg.mustSitExemptAtOrBelow;
-  if (cfg.mustSitOnce && !exempt && N > court) {
-    enforceSitOnce(grid, players, periods, court);
-    // recompute played after repair
-    for (const id of ids) played[id] = 0;
-    for (const p of grid) for (const id of p) played[id]++;
+// Reallocate a game's rotation from `startPeriod` onward, keeping every
+// period before it exactly as it happened. Used when a player is added
+// mid-game (e.g. a late arrival): the new player's `available` window should
+// already reflect that they weren't there for the preserved prefix, and the
+// existing counts/streaks from that prefix carry forward so the remaining
+// periods stay fair given what's already been played.
+//
+// @param {Object} cfg  same shape as generateRotation's cfg, plus:
+// @param {number} cfg.startPeriod    first period to regenerate (0-based)
+// @param {string[][]} cfg.existingGrid  the game's current grid (kept as-is before startPeriod)
+export function reallocateFromPeriod(cfg) {
+  const { periods, court, players, seed = 1, existingGrid } = cfg;
+  const maxConsecutive = cfg.maxConsecutive ?? null;
+  const start = Math.max(0, Math.min(cfg.startPeriod, periods));
+  const rng = mulberry32(seed);
+
+  const ids = players.map((p) => p.id);
+  const byId = Object.fromEntries(players.map((p) => [p.id, p]));
+  const prefix = existingGrid.slice(0, start);
+
+  const played = Object.fromEntries(ids.map((id) => [id, 0]));
+  const streak = Object.fromEntries(ids.map((id) => [id, 0]));
+  for (const period of prefix) {
+    const onCourt = new Set(period);
+    for (const id of ids) {
+      if (onCourt.has(id)) { played[id]++; streak[id]++; }
+      else streak[id] = 0;
+    }
   }
 
-  const warnings = collectWarnings({ grid, players, periods, court, maxConsecutive, cfg, played });
-  return { grid, counts: played, warnings };
+  const tail = runPeriods({ ids, byId, periods, court, maxConsecutive, rng, played, streak, fromPeriod: start });
+  const grid = [...prefix, ...tail];
+
+  const N = players.length;
+  const exempt = N <= cfg.mustSitExemptAtOrBelow;
+  if (cfg.mustSitOnce && !exempt && N > court) {
+    enforceSitOnce(grid, players, periods, court, start); // only allowed to touch periods >= start
+  }
+
+  const finalPlayed = Object.fromEntries(ids.map((id) => [id, 0]));
+  for (const p of grid) for (const id of p) finalPlayed[id] = (finalPlayed[id] || 0) + 1;
+
+  const warnings = collectWarnings({ grid, players, periods, court, maxConsecutive, cfg, played: finalPlayed });
+  return { grid, counts: finalPlayed, warnings };
 }
 
 function platoonRotation(players, periods, court, rng) {
@@ -134,7 +189,9 @@ function platoonRotation(players, periods, court, rng) {
 }
 
 // Make sure no eligible player plays every single period (Mighty Mite).
-function enforceSitOnce(grid, players, periods, court) {
+// `minPeriod` restricts which periods the repair is allowed to swap within —
+// used by reallocateFromPeriod to keep already-played periods untouched.
+function enforceSitOnce(grid, players, periods, court, minPeriod = 0) {
   const ids = players.map((p) => p.id);
   const byId = Object.fromEntries(players.map((p) => [p.id, p]));
   const playedCount = (id) => grid.reduce((n, p) => n + (p.includes(id) ? 1 : 0), 0);
@@ -146,7 +203,7 @@ function enforceSitOnce(grid, players, periods, court) {
     if (playedCount(id) < periods) continue; // already sits at least once
     // Find a period where we can swap them out for someone who is sitting,
     // available, and currently plays more than they would after the swap.
-    for (let p = 0; p < periods; p++) {
+    for (let p = minPeriod; p < periods; p++) {
       const onCourt = grid[p];
       if (!onCourt.includes(id)) continue;
       const benchCandidate = ids.find(

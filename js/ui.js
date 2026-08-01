@@ -1,7 +1,7 @@
 // UI: screen rendering and event wiring. Mobile-first, no framework.
 import * as store from './store.js';
 import { getDivision, DIVISION_LIST } from './rules.js';
-import { generateRotation, validateRotation, availabilityFromWindow } from './rotation.js';
+import { generateRotation, reallocateFromPeriod, validateRotation, availabilityFromWindow } from './rotation.js';
 import { seasonStats, finalizedGameCount } from './stats.js';
 import { assignPositions, POSITIONS, posLabel } from './positions.js';
 
@@ -512,18 +512,60 @@ function managePlayersSheet(team, g, div) {
       for (const p of absent) {
         listWrap.appendChild(el('div', { class: 'row between', style: 'padding:6px 0' }, [
           el('span', { text: p.number ? `${p.name} #${p.number}` : p.name }),
-          el('button', { class: 'btn sm success', text: '+ Add', onclick: () => {
-            store.addPlayerToGame(team.id, g.id, p.id);
-            render();
-            build();
-            toast(`${p.name} added — sub them onto the court from the grid or Live view.`);
-          } }),
+          el('button', { class: 'btn sm success', text: '+ Add', onclick: () => addPlayerMidGame(team, g, div, p) }),
         ]));
       }
     };
     build();
     sheet.appendChild(listWrap);
   });
+}
+
+// Adding a late arrival: ask which period they're joining at, then rebalance
+// every period from there on (periods already played are left untouched).
+function addPlayerMidGame(team, g, div, p) {
+  const periodOpts = (sel) => Array.from({ length: div.periods }, (_, i) =>
+    el('option', { value: i + 1, ...(sel === i + 1 ? { selected: true } : {}) }, [`P${i + 1} (${div.periodLabels[i]})`]));
+  let from = liveOn ? Math.min(livePeriod + 1, div.periods) : 1;
+
+  openSheet(`Add ${p.name}`, (sheet, close) => {
+    sheet.appendChild(el('p', { class: 'muted', text:
+      'Pick the period they’re joining at. Periods already played stay exactly as they were — the remaining subs rebalance to fold them in fairly.' }));
+    sheet.appendChild(el('div', { class: 'row' }, [
+      el('span', { text: 'Plays from', style: 'min-width:78px' }),
+      el('select', { onchange: (e) => { from = +e.target.value; } }, periodOpts(from)),
+    ]));
+    sheet.appendChild(el('div', { class: 'stack', style: 'margin-top:14px' }, [
+      el('button', { class: 'btn block primary', text: 'Add & rebalance', onclick: () => {
+        close();
+        reallocateForNewPlayer(team, g, div, p.id, from - 1);
+        render();
+        toast(`${p.name} added — remaining subs rebalanced.`);
+      } }),
+      el('button', { class: 'btn block ghost', text: 'Cancel', onclick: close }),
+    ]));
+  });
+}
+
+function reallocateForNewPlayer(team, g, div, playerId, startPeriod) {
+  store.addPlayerToGame(team.id, g.id, playerId);
+
+  const windows = { ...(g.windows || {}) };
+  if (startPeriod > 0) windows[playerId] = { from: startPeriod + 1, to: div.periods };
+  else delete windows[playerId];
+
+  const frontLoadSet = new Set(g.frontLoad || []);
+  const players = buildGenPlayers(team, new Set(g.presentIds), windows, frontLoadSet, div.periods);
+  const seed = ((g.seed || 1) * 1103515245 + 12345) & 0x7fffffff;
+  const { grid } = reallocateFromPeriod({ ...div, players, seed, startPeriod, existingGrid: g.grid });
+
+  // Position pins for periods that got regenerated no longer apply; keep the rest.
+  const positionLocks = {};
+  for (const [key, val] of Object.entries(g.positionLocks || {})) {
+    if (Number(key.split(':')[0]) < startPeriod) positionLocks[key] = val;
+  }
+
+  store.updateGame(team.id, g.id, { grid, windows, seed, positionLocks });
 }
 
 // ---- positions ----
